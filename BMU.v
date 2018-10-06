@@ -20,7 +20,7 @@
 // Additional Comments: 
 //
 //////////////////////////////////////////////////////////////////////////////////
-module BMU  #(parameter WIDTH_BM = 20 ) (
+module BMU  #(parameter WIDTH_BM = 8 ) (
     input clk_i,
     input rst_an_i,
     input rst_sync_i,    
@@ -29,7 +29,7 @@ module BMU  #(parameter WIDTH_BM = 20 ) (
     input [23:0] soft_data_i,
 	input soft_data_valid_i,
     input [1:0] register_num_i,
-    input [3:0] valid_polynomials_i,
+    input [2:0] valid_polynomials_i,
     input [7:0] polynomial1_i,
     input [7:0] polynomial2_i,
     input [7:0] polynomial3_i,
@@ -52,9 +52,11 @@ wire [5:0] half_polyn_tmp;
 wire [3:0] soft_bit0,soft_bit1,soft_bit2,soft_bit3,soft_bit4,soft_bit5; 
 wire signed [3:0] x_soft_bit0,x_soft_bit1,x_soft_bit2,x_soft_bit3,x_soft_bit4,x_soft_bit5; 
 
-reg signed [WIDTH_BM-1:0] bm_o,
-reg bm_valid_o;
+reg signed [WIDTH_BM-1:0] bm_r;
+reg bm_valid_r;
 
+assign bm_o =  bm_r;
+assign bm_valid_o = bm_valid_r;
 assign ready_o = ready_r;
 //generate initiation control signals' pulse
 always@(posedge clk_i or negedge rst_an_i) begin
@@ -122,16 +124,16 @@ always@(posedge clk_i or negedge rst_an_i) begin
 		low_codeword_tmp[5] <= ( state_x_i[3] & polynomial6_i[3] ) ^ half_polyn_tmp[5] ;		
 	  end
 	  default:  begin
-	    low_codeword_tmp[0] <=  half_polyn_tmp[0]
-		low_codeword_tmp[1] <=  half_polyn_tmp[1]
-		low_codeword_tmp[2] <=  half_polyn_tmp[2]
-		low_codeword_tmp[3] <=  half_polyn_tmp[3]
-		low_codeword_tmp[4] <=  half_polyn_tmp[4]
-		low_codeword_tmp[5] <=  half_polyn_tmp[5]		
+	    low_codeword_tmp[0] <=  half_polyn_tmp[0];
+		low_codeword_tmp[1] <=  half_polyn_tmp[1];
+		low_codeword_tmp[2] <=  half_polyn_tmp[2];
+		low_codeword_tmp[3] <=  half_polyn_tmp[3];
+		low_codeword_tmp[4] <=  half_polyn_tmp[4];
+		low_codeword_tmp[5] <=  half_polyn_tmp[5];
 	  end                   
     endcase
   end
-     	
+ end    	
 // gen the code word of the low path 
 always@(posedge clk_i or negedge rst_an_i) begin
   if(!rst_an_i) 
@@ -166,25 +168,26 @@ assign x_soft_bit5 =  low_codeword[5]? soft_bit5 : {soft_bit5[3],soft_bit5[2:0]}
 
 always@(posedge clk_i or negedge rst_an_i) begin
   if(!rst_an_i) begin
-    bm_valid_o <= 1'b0;
-	bm_o <= WIDTH_BM'h0;
+    bm_valid_r <= 1'b0;
+	bm_r <= 0;
 	end
   else if( rst_sync_i ) begin
-    bm_valid_o <= 1'b0;
-	bm_o <= WIDTH_BM'h0;
+    bm_valid_r <= 1'b0;
+	bm_r <= 0;
 	end
   else if( soft_data_valid_i ) begin
-    bm_valid_o <= 1'b0;
+    bm_valid_r <= 1'b0;
 	case( valid_polynomials_i)
-      3'b000 : bm_o <=  x_soft_bit5 + x_soft_bit4 + x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
-	  3'b001 : bm_o <=  x_soft_bit4 + x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0; 
-	  3'b010 : bm_o <=  x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
-      3'b011 : bm_o <=  x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
-      default: bm_o <=  x_soft_bit1 + x_soft_bit0; 	   
+      3'b000 : bm_r <=  x_soft_bit5 + x_soft_bit4 + x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
+	  3'b001 : bm_r <=  x_soft_bit4 + x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0; 
+	  3'b010 : bm_r <=  x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
+      3'b011 : bm_r <=  x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
+      default: bm_r <=  x_soft_bit1 + x_soft_bit0; 
+    endcase	   
   end 
   else begin
-    bm_valid_o <= 1'b0;
-	bm_o <= WIDTH_BM'h0;
+    bm_valid_r <= 1'b0;
+	bm_r <= 0;
   end
-  
+end
 endmodule
