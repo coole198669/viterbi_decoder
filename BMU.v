@@ -24,7 +24,7 @@ module BMU  #(parameter WIDTH_BM = 8 ) (
     input clk_i,
     input rst_an_i,
     input rst_sync_i,    
-    input start_i,    // a pulse to start
+    input frame_start_i,    // a pulse to start
     input [5:0] state_x_i,
     input [23:0] soft_data_i,
     input soft_data_valid_i,
@@ -69,7 +69,7 @@ always@(posedge clk_i or negedge rst_an_i) begin
       calc_codeword_en <= 1'b0;      
     end
   else begin 
-      calc_polyn_en    <= start_i; 
+      calc_polyn_en    <= frame_start_i; 
       calc_codeword_en <= calc_polyn_en;      
     end
 end
@@ -78,7 +78,7 @@ end
 always@(posedge clk_i or negedge rst_an_i) begin
   if(!rst_an_i) 
       ready_r    <= 1'b0;     
-  else if(rst_sync_i) 
+  else if(rst_sync_i|frame_start_i) 
       ready_r    <= 1'b0;       
   else if(calc_codeword_en)  
       ready_r    <= 1'b1; 
@@ -176,7 +176,7 @@ always@(posedge clk_i or negedge rst_an_i) begin
     bm_r <= 0;
     end
   else if( soft_data_valid_i ) begin
-    bm_valid_r <= 1'b0;
+    bm_valid_r <= 1'b1;
     case( valid_polynomials_i)
       3'b000 : bm_r <=  x_soft_bit5 + x_soft_bit4 + x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
       3'b001 : bm_r <=  x_soft_bit4 + x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0; 
