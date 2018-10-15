@@ -2,9 +2,6 @@
 
 
 
-
-
-
 module traceback #(parameter W_TB_LEN=6,W_HALF=32,W_FULL=64)( 
     input                    clk_i,
     input                    rst_an_i,
