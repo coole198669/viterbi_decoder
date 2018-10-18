@@ -20,7 +20,7 @@
 //////////////////////////////////////////////////////////////////////////////////
 module tb(    );
 	 
-	 parameter WIDTH_BM = 8,SRC_ADDR_W = 12 , DST_ADDR_W = 12,W_TB_ADDR=6;
+	 parameter WIDTH_BM = 9,SRC_ADDR_W = 12 , DST_ADDR_W = 12,W_TB_ADDR=6;
  
 	 reg clk_i;
     reg rst_an_i;
@@ -35,8 +35,8 @@ module tb(    );
     reg [7:0] polynomial4_i;
     reg [7:0] polynomial5_i;
     reg [7:0] polynomial6_i;
-    reg [9:0] infobit_length_i;
-    reg [9:0] decoding_length_i;  
+    reg [10:0] infobit_length_i;
+    reg [11:0] decoding_length_i;  
     reg [SRC_ADDR_W-1:0]  src_start_addr_i;
     reg [DST_ADDR_W-1:0]  dst_start_addr_i;
      //status output
@@ -57,14 +57,14 @@ module tb(    );
      wire [63:0]            tb_wdata_o;
      wire [63:0]            tb_rdata_i;
 
-
+assign src_rdata_i =24'hF7F1FF;
 always #10 clk_i=~clk_i;
 
 initial begin
    clk_i=0;
 	rst_an_i=0;
 	rst_sync_i =0;   
-   frame_start_i=1; 
+   frame_start_i=0; 
    register_num_i = 0;      
    valid_polynomials_i =1 ; 
    tail_biting_en_i =1;         
@@ -85,7 +85,7 @@ initial begin
 	frame_start_i=1; 
 	#20;
 	frame_start_i=0; 
-	#800000;
+	#8000000;
 	//repeat 8000 @(posedge clk_i);
 	
 	$finish;

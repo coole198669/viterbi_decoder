@@ -18,7 +18,7 @@
 // Additional Comments: 
 //
 //////////////////////////////////////////////////////////////////////////////////
-module viterbi_core #(parameter WIDTH_BM = 8,SRC_ADDR_W = 12 , DST_ADDR_W = 12,W_TB_ADDR=6)(
+module viterbi_core #(parameter WIDTH_BM = 9,SRC_ADDR_W = 12 , DST_ADDR_W = 12,W_TB_ADDR=6)(
     input clk_i,
     input rst_an_i,
     input rst_sync_i,
@@ -34,8 +34,8 @@ module viterbi_core #(parameter WIDTH_BM = 8,SRC_ADDR_W = 12 , DST_ADDR_W = 12,W
     input [7:0] polynomial4_i,
     input [7:0] polynomial5_i,
     input [7:0] polynomial6_i,
-    input [9:0] infobit_length_i,
-    input [9:0] decoding_length_i, //Valid when Tail-biting==1 and decodingLength>=InfoBitLength
+    input [10:0] infobit_length_i,
+    input [11:0] decoding_length_i, //Valid when Tail-biting==1 and decodingLength>=InfoBitLength
     input [SRC_ADDR_W-1:0]  src_start_addr_i,
     input [DST_ADDR_W-1:0]  dst_start_addr_i,
      //status output
@@ -112,10 +112,12 @@ parameter IDLE=3'd0, CHECK_REMIN=3'd1,RUN_FULL_TB=3'd2, RUN_HALF_TB=3'd3, FLUSH_
 /////////////////////////////////////////////////////////////////////////
 reg  bmu_ready_d1_r, decoding_start_r, is_t0_r;
 wire decoding_start_s;
-reg   [9:0]  trellis_idx_r;
+reg   [11:0]  trellis_idx_r;
+wire   [11:0] ext_trellis_idx_s;
 reg   [2:0]  state_r;
 reg   full_tb_start_r,half_tb_start_r,flush_all_start_r;
-
+reg   first_loop_r;
+reg   last_loop_r;
 reg  [SRC_ADDR_W-1:0]  fetch_src_cnt_r;
 
 reg                    src_rd_r; 
@@ -126,11 +128,11 @@ reg  traceback_start_r;
 wire [5:0] start_state_index_s;
 
 
-reg [W_TB_ADDR-1:0]    tb_len_r;
+reg [W_TB_ADDR:0]    tb_len_r;
 wire                   tb_wr_s;
 reg [W_TB_ADDR-1:0]    tb_wr_addr_r;
 wire [W_TB_ADDR-1:0]   tb_rd_addr_s;  
- 
+wire [W_TB_ADDR-1:0]   tb_start_addr_s;   
 wire                   decoding_end_s;
 
 
@@ -152,20 +154,22 @@ always@(posedge clk_i or negedge rst_an_i) begin
   else bmu_ready_d1_r  <= bmu_ready_s[0]; 
 end
 
+always@(posedge clk_i or negedge rst_an_i) begin
+  if(!rst_an_i) 
+     decoding_start_r  <= 0;     
+  else if(rst_sync_i ) decoding_start_r  <= 0;  
+  else decoding_start_r  <= decoding_start_s; 
+end
+
 assign decoding_start_s = bmu_ready_s[0] & ~bmu_ready_d1_r;
 assign is_t0_s = is_t0_r;
 always@(posedge clk_i or negedge rst_an_i) begin
-  if(!rst_an_i)  begin
-    decoding_start_r  <= 0;   
+  if(!rst_an_i)
     is_t0_r <= 0;   
-  end 
-  else if(rst_sync_i )begin
-    decoding_start_r  <= 0;   
-    is_t0_r <= 0;   
-  end 
-  else begin
-    decoding_start_r  <= decoding_start_s;   
-    is_t0_r <= decoding_start_r;    
+  else if(rst_sync_i |frame_start_i )
+    is_t0_r <= 1;   
+  else if( bm_valid_s[10] ) begin  
+    is_t0_r <= 0;    
   end 
 end
 
@@ -182,6 +186,8 @@ always@(posedge clk_i or negedge rst_an_i) begin
      tb_len_r         <= 0;
 	  frame_done_r     <= 0;
 	  busy_r           <= 0; 
+	  first_loop_r     <= 0;
+	  last_loop_r       <= 0;
   end     
   else if(rst_sync_i )begin
      state_r  <= IDLE;
@@ -192,6 +198,8 @@ always@(posedge clk_i or negedge rst_an_i) begin
      tb_len_r         <= 0;
 	  frame_done_r     <= 0;
 	  busy_r           <= 0; 
+	  first_loop_r     <= 0;
+	  last_loop_r       <= 0;
   end   
   else if(frame_start_i) begin
      trellis_idx_r   <= decoding_length_i;
@@ -199,26 +207,37 @@ always@(posedge clk_i or negedge rst_an_i) begin
      full_tb_start_r <= 1'b0;
      half_tb_start_r <= 1'b0;
      flush_all_start_r<= 1'b0;
+	  first_loop_r     <= 0;
+	  last_loop_r       <= 0;
 	  tb_len_r         <= 0;
 	  frame_done_r     <= 0;
-	  busy_r           <= 0; 
+	  busy_r           <= 1; 
   end  
   else begin
     case(state_r)
       IDLE:begin
         if(decoding_start_s)
           state_r  <= CHECK_REMIN;
-			 busy_r           <= 1; 
+			 
+		  if(~dst_wr_r & last_loop_r) begin
+		     busy_r     <= 0;
+			  frame_done_r     <= 1;
+			  last_loop_r  <= 0;
+		  end
+		  else if(~last_loop_r )begin 
+			  frame_done_r     <= 0;
+		  end
       end
       CHECK_REMIN:begin
         if(decoding_start_r) begin
             if(trellis_idx_r>FULL_TRACEBAKE_LEN) begin
               state_r  <= RUN_FULL_TB;
-              full_tb_start_r <= 1'b1;
+              full_tb_start_r <= 1'b1;			  
             end
             else begin
               state_r  <= FLUSH_ALL;
               flush_all_start_r <= 1'b1;
+				  first_loop_r     <= 1;
             end
         end
         else begin
@@ -248,17 +267,18 @@ always@(posedge clk_i or negedge rst_an_i) begin
              trellis_idx_r <=trellis_idx_r - HALF_TRACEBAKE_LEN;
            end
           half_tb_start_r <= 1'b0;
-          tb_len_r         <= HALF_TRACEBAKE_LEN;
+          tb_len_r         <= FULL_TRACEBAKE_LEN;
         end
       FLUSH_ALL:begin
           if(tb_bits_valid_s ) begin
              state_r  <= IDLE;
              trellis_idx_r <= 0;
-				 busy_r     <= 0;
-				 frame_done_r     <= 1;
+				 first_loop_r  <=0;
+				 last_loop_r <=1;
            end
           flush_all_start_r <= 1'b0;
-          tb_len_r         <= trellis_idx_r;
+			 if(first_loop_r) tb_len_r   <= trellis_idx_r;
+          else  tb_len_r   <= trellis_idx_r + HALF_TRACEBAKE_LEN;
         end
       default:begin
        state_r  <= IDLE;
@@ -266,6 +286,7 @@ always@(posedge clk_i or negedge rst_an_i) begin
        half_tb_start_r <= 1'b0;
        flush_all_start_r<= 1'b0;
        trellis_idx_r   <= 0;
+		 first_loop_r     <= 0;
       end  
     endcase   
   end //else begin
@@ -306,14 +327,21 @@ always@(posedge clk_i or negedge rst_an_i) begin
        src_addr_r<= 0; 
        src_len_counter_r <= 0;  
    end
-   else if(frame_start_i)        begin      
+   else if(frame_start_i)  begin      
        src_addr_r<= src_start_addr_i; 
        src_len_counter_r <= 0;  
    end
-   else if((full_tb_start_r | half_tb_start_r |flush_all_start_r) &&(pm_norm_en_s == 1 && fetch_src_cnt_r!=0 ) ) begin
+   else if(full_tb_start_r | half_tb_start_r |flush_all_start_r) begin
        src_len_counter_r <= src_len_counter_r + 1;  
        src_rd_r <= 1'b1; 
-       if(src_len_counter_r>infobit_length_i) src_addr_r<= src_start_addr_i; 
+       if(src_len_counter_r==infobit_length_i) src_addr_r<= src_start_addr_i; 
+       else src_addr_r<= src_addr_r + 1;   
+   
+   end
+   else if (pm_norm_en_s == 1 && fetch_src_cnt_r!=0 ) begin
+       src_len_counter_r <= src_len_counter_r + 1;  
+       src_rd_r <= 1'b1; 
+       if(src_len_counter_r==infobit_length_i) src_addr_r<= src_start_addr_i; 
        else src_addr_r<= src_addr_r + 1;    
    end
    else src_rd_r <= 1'b0; 
@@ -349,10 +377,10 @@ endgenerate
   else traceback_start_r      <= 1'b0;
  end
  
- assign decoding_end_s = state_r==FLUSH_ALL ? 1'b1 : 1'b0;
+ assign decoding_end_s = (state_r==FLUSH_ALL || last_loop_r==1) ? 1'b1 : 1'b0;
  
  assign start_state_index_s = (tail_biting_en_i==1'b0 &&  state_r == FLUSH_ALL) ? 0 : max_state_index_s ;
- 
+ assign tb_start_addr_s = tb_wr_addr_r-1;
   traceback traceback_ins ( 
     .clk_i               (  clk_i          ),              
     .rst_an_i            (  rst_an_i       ),       
@@ -382,9 +410,10 @@ assign  dst_wdata_o = dst_wdata_r;
 
 
 
-
+assign ext_trellis_idx_s = trellis_idx_r + HALF_TRACEBAKE_LEN;
 always@(*) begin
     if(decoding_end_s)  begin 
+	    if( first_loop_r) begin
          if(trellis_idx_r >= 56) byte_idx_s =8;
          else if(trellis_idx_r >= 48) byte_idx_s =7;
          else if(trellis_idx_r >= 40) byte_idx_s =6;
@@ -394,6 +423,18 @@ always@(*) begin
          else if(trellis_idx_r >= 8)  byte_idx_s =2;
          else if(trellis_idx_r > 0)   byte_idx_s =1;
          else   byte_idx_s =0;
+		 end
+		 else begin
+		  if(ext_trellis_idx_s >= 56) byte_idx_s =8;
+         else if(ext_trellis_idx_s >= 48) byte_idx_s =7;
+         else if(ext_trellis_idx_s >= 40) byte_idx_s =6;
+         else if(ext_trellis_idx_s >= 32) byte_idx_s =5;
+         else if(ext_trellis_idx_s >= 24) byte_idx_s =4;
+         else if(ext_trellis_idx_s >= 16) byte_idx_s =3;
+         else if(ext_trellis_idx_s >= 8)  byte_idx_s =2;
+         else if(ext_trellis_idx_s > 0)   byte_idx_s =1;
+         else   byte_idx_s =0;
+		 end
       end
     else byte_idx_s = 4;
 end 
@@ -401,7 +442,6 @@ end
 always@(posedge clk_i or negedge rst_an_i) begin
    if(!rst_an_i)   begin 
      dst_wr_r  <= 1'b0;   
-     dst_addr_r<=  0; 
      dst_wdata_r <= 8'b0;   
      byte_idx_r <=0;    
      half_tb_bits_tmp_r <=0; 
@@ -409,7 +449,6 @@ always@(posedge clk_i or negedge rst_an_i) begin
    end   
    else if(rst_sync_i ) begin 
      dst_wr_r  <= 1'b0;   
-     dst_addr_r<=  0;  
      dst_wdata_r <= 8'b0;
      byte_idx_r <=0;
      half_tb_bits_tmp_r <=0; 
@@ -417,26 +456,22 @@ always@(posedge clk_i or negedge rst_an_i) begin
    end  
    else if(frame_start_i) begin
      dst_wr_r  <= 1'b0;   
-     dst_addr_r<=  dst_start_addr_i; 
      dst_wdata_r <= 8'b0;
      byte_idx_r <=0;    
      half_tb_bits_tmp_r <=0; 
      full_tb_bits_tmp_r <=0;     
    end 
    else if(tb_bits_valid_s ) begin
-     dst_wr_r    <= 1'b1;   
-     dst_addr_r  <=  dst_addr_r; 
+     dst_wr_r    <= 1'b1;    
      dst_wdata_r <=  decoding_end_s ? full_tb_bits_s[7:0] : half_tb_bits_s[7:0];
-     byte_idx_r <= byte_idx_s;  
-     half_tb_bits_tmp_r <=half_tb_bits_s>>8;
-     full_tb_bits_tmp_r <=full_tb_bits_s>>8;
+     byte_idx_r <= byte_idx_s-1;  
+     if(decoding_end_s) half_tb_bits_tmp_r  <= half_tb_bits_tmp_r>>8;
+     else full_tb_bits_tmp_r <=full_tb_bits_tmp_r >> 8; 
 	end
    else if(byte_idx_r>0) begin
      byte_idx_r <= byte_idx_r -1;
      dst_wr_r  <= 1'b1;   
-     dst_addr_r<=  dst_addr_r + 1; 
-     dst_wdata_r <= decoding_end_s ? full_tb_bits_tmp_r[7:0] : half_tb_bits_tmp_r[7:0];  
-     byte_idx_r <=0;     
+     dst_wdata_r <= decoding_end_s ? full_tb_bits_tmp_r[7:0] : half_tb_bits_tmp_r[7:0];      
      if(decoding_end_s) half_tb_bits_tmp_r  <= half_tb_bits_tmp_r>>8;
      else full_tb_bits_tmp_r <=full_tb_bits_tmp_r >> 8; 
    end
@@ -448,6 +483,13 @@ always@(posedge clk_i or negedge rst_an_i) begin
      full_tb_bits_tmp_r <=0;    
    end
 end   
+ 
+ always@(posedge clk_i or negedge rst_an_i) begin
+   if(!rst_an_i)  dst_addr_r<=  0;   
+   else if(rst_sync_i )  dst_addr_r<=  0;       
+   else if(frame_start_i) dst_addr_r<=  dst_start_addr_i;
+	else if(dst_wr_r) dst_addr_r<= dst_addr_r +1 ; 
+end
  
  assign pm_norm_en_s = acs_valid_s[0];
  
@@ -1888,7 +1930,7 @@ ACS acs_inst_0  (
              .prev_high2_i   (pm_r_s_8),   
              .prev_high3_i   (pm_r_s_16),   
              .prev_high4_i   (pm_r_s_32),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd0 ), 
              .pm_o           (pm_tmp_s_0), 
              .survivor_path_o(survivor_path_s[0]), 
@@ -1908,7 +1950,7 @@ ACS acs_inst_1  (
              .prev_high2_i   (pm_r_s_8),   
              .prev_high3_i   (pm_r_s_16),   
              .prev_high4_i   (pm_r_s_32),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd1 ), 
              .pm_o           (pm_tmp_s_1), 
              .survivor_path_o(survivor_path_s[1]), 
@@ -1928,7 +1970,7 @@ ACS acs_inst_2  (
              .prev_high2_i   (pm_r_s_9),   
              .prev_high3_i   (pm_r_s_17),   
              .prev_high4_i   (pm_r_s_33),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd2 ), 
              .pm_o           (pm_tmp_s_2), 
              .survivor_path_o(survivor_path_s[2]), 
@@ -1948,7 +1990,7 @@ ACS acs_inst_3  (
              .prev_high2_i   (pm_r_s_9),   
              .prev_high3_i   (pm_r_s_17),   
              .prev_high4_i   (pm_r_s_33),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd3 ), 
              .pm_o           (pm_tmp_s_3), 
              .survivor_path_o(survivor_path_s[3]), 
@@ -1968,7 +2010,7 @@ ACS acs_inst_4  (
              .prev_high2_i   (pm_r_s_10),   
              .prev_high3_i   (pm_r_s_18),   
              .prev_high4_i   (pm_r_s_34),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd4 ), 
              .pm_o           (pm_tmp_s_4), 
              .survivor_path_o(survivor_path_s[4]), 
@@ -1988,7 +2030,7 @@ ACS acs_inst_5  (
              .prev_high2_i   (pm_r_s_10),   
              .prev_high3_i   (pm_r_s_18),   
              .prev_high4_i   (pm_r_s_34),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd5 ), 
              .pm_o           (pm_tmp_s_5), 
              .survivor_path_o(survivor_path_s[5]), 
@@ -2008,7 +2050,7 @@ ACS acs_inst_6  (
              .prev_high2_i   (pm_r_s_11),   
              .prev_high3_i   (pm_r_s_19),   
              .prev_high4_i   (pm_r_s_35),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd6 ), 
              .pm_o           (pm_tmp_s_6), 
              .survivor_path_o(survivor_path_s[6]), 
@@ -2028,7 +2070,7 @@ ACS acs_inst_7  (
              .prev_high2_i   (pm_r_s_11),   
              .prev_high3_i   (pm_r_s_19),   
              .prev_high4_i   (pm_r_s_35),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd7 ), 
              .pm_o           (pm_tmp_s_7), 
              .survivor_path_o(survivor_path_s[7]), 
@@ -2048,7 +2090,7 @@ ACS acs_inst_8  (
              .prev_high2_i   (pm_r_s_12),   
              .prev_high3_i   (pm_r_s_20),   
              .prev_high4_i   (pm_r_s_36),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd8 ), 
              .pm_o           (pm_tmp_s_8), 
              .survivor_path_o(survivor_path_s[8]), 
@@ -2068,7 +2110,7 @@ ACS acs_inst_9  (
              .prev_high2_i   (pm_r_s_12),   
              .prev_high3_i   (pm_r_s_20),   
              .prev_high4_i   (pm_r_s_36),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd9 ), 
              .pm_o           (pm_tmp_s_9), 
              .survivor_path_o(survivor_path_s[9]), 
@@ -2088,7 +2130,7 @@ ACS acs_inst_10  (
              .prev_high2_i   (pm_r_s_13),   
              .prev_high3_i   (pm_r_s_21),   
              .prev_high4_i   (pm_r_s_37),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd10 ), 
              .pm_o           (pm_tmp_s_10), 
              .survivor_path_o(survivor_path_s[10]), 
@@ -2108,7 +2150,7 @@ ACS acs_inst_11  (
              .prev_high2_i   (pm_r_s_13),   
              .prev_high3_i   (pm_r_s_21),   
              .prev_high4_i   (pm_r_s_37),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd11 ), 
              .pm_o           (pm_tmp_s_11), 
              .survivor_path_o(survivor_path_s[11]), 
@@ -2128,7 +2170,7 @@ ACS acs_inst_12  (
              .prev_high2_i   (pm_r_s_14),   
              .prev_high3_i   (pm_r_s_22),   
              .prev_high4_i   (pm_r_s_38),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd12 ), 
              .pm_o           (pm_tmp_s_12), 
              .survivor_path_o(survivor_path_s[12]), 
@@ -2148,7 +2190,7 @@ ACS acs_inst_13  (
              .prev_high2_i   (pm_r_s_14),   
              .prev_high3_i   (pm_r_s_22),   
              .prev_high4_i   (pm_r_s_38),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd13 ), 
              .pm_o           (pm_tmp_s_13), 
              .survivor_path_o(survivor_path_s[13]), 
@@ -2168,7 +2210,7 @@ ACS acs_inst_14  (
              .prev_high2_i   (pm_r_s_15),   
              .prev_high3_i   (pm_r_s_23),   
              .prev_high4_i   (pm_r_s_39),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd14 ), 
              .pm_o           (pm_tmp_s_14), 
              .survivor_path_o(survivor_path_s[14]), 
@@ -2188,7 +2230,7 @@ ACS acs_inst_15  (
              .prev_high2_i   (pm_r_s_15),   
              .prev_high3_i   (pm_r_s_23),   
              .prev_high4_i   (pm_r_s_39),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd15 ), 
              .pm_o           (pm_tmp_s_15), 
              .survivor_path_o(survivor_path_s[15]), 
@@ -2208,7 +2250,7 @@ ACS acs_inst_16  (
              .prev_high2_i   (pm_r_s_16),   
              .prev_high3_i   (pm_r_s_24),   
              .prev_high4_i   (pm_r_s_40),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd16 ), 
              .pm_o           (pm_tmp_s_16), 
              .survivor_path_o(survivor_path_s[16]), 
@@ -2228,7 +2270,7 @@ ACS acs_inst_17  (
              .prev_high2_i   (pm_r_s_16),   
              .prev_high3_i   (pm_r_s_24),   
              .prev_high4_i   (pm_r_s_40),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd17 ), 
              .pm_o           (pm_tmp_s_17), 
              .survivor_path_o(survivor_path_s[17]), 
@@ -2248,7 +2290,7 @@ ACS acs_inst_18  (
              .prev_high2_i   (pm_r_s_17),   
              .prev_high3_i   (pm_r_s_25),   
              .prev_high4_i   (pm_r_s_41),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd18 ), 
              .pm_o           (pm_tmp_s_18), 
              .survivor_path_o(survivor_path_s[18]), 
@@ -2268,7 +2310,7 @@ ACS acs_inst_19  (
              .prev_high2_i   (pm_r_s_17),   
              .prev_high3_i   (pm_r_s_25),   
              .prev_high4_i   (pm_r_s_41),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd19 ), 
              .pm_o           (pm_tmp_s_19), 
              .survivor_path_o(survivor_path_s[19]), 
@@ -2288,7 +2330,7 @@ ACS acs_inst_20  (
              .prev_high2_i   (pm_r_s_18),   
              .prev_high3_i   (pm_r_s_26),   
              .prev_high4_i   (pm_r_s_42),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd20 ), 
              .pm_o           (pm_tmp_s_20), 
              .survivor_path_o(survivor_path_s[20]), 
@@ -2308,7 +2350,7 @@ ACS acs_inst_21  (
              .prev_high2_i   (pm_r_s_18),   
              .prev_high3_i   (pm_r_s_26),   
              .prev_high4_i   (pm_r_s_42),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd21 ), 
              .pm_o           (pm_tmp_s_21), 
              .survivor_path_o(survivor_path_s[21]), 
@@ -2328,7 +2370,7 @@ ACS acs_inst_22  (
              .prev_high2_i   (pm_r_s_19),   
              .prev_high3_i   (pm_r_s_27),   
              .prev_high4_i   (pm_r_s_43),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd22 ), 
              .pm_o           (pm_tmp_s_22), 
              .survivor_path_o(survivor_path_s[22]), 
@@ -2348,7 +2390,7 @@ ACS acs_inst_23  (
              .prev_high2_i   (pm_r_s_19),   
              .prev_high3_i   (pm_r_s_27),   
              .prev_high4_i   (pm_r_s_43),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd23 ), 
              .pm_o           (pm_tmp_s_23), 
              .survivor_path_o(survivor_path_s[23]), 
@@ -2368,7 +2410,7 @@ ACS acs_inst_24  (
              .prev_high2_i   (pm_r_s_20),   
              .prev_high3_i   (pm_r_s_28),   
              .prev_high4_i   (pm_r_s_44),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd24 ), 
              .pm_o           (pm_tmp_s_24), 
              .survivor_path_o(survivor_path_s[24]), 
@@ -2388,7 +2430,7 @@ ACS acs_inst_25  (
              .prev_high2_i   (pm_r_s_20),   
              .prev_high3_i   (pm_r_s_28),   
              .prev_high4_i   (pm_r_s_44),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd25 ), 
              .pm_o           (pm_tmp_s_25), 
              .survivor_path_o(survivor_path_s[25]), 
@@ -2408,7 +2450,7 @@ ACS acs_inst_26  (
              .prev_high2_i   (pm_r_s_21),   
              .prev_high3_i   (pm_r_s_29),   
              .prev_high4_i   (pm_r_s_45),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd26 ), 
              .pm_o           (pm_tmp_s_26), 
              .survivor_path_o(survivor_path_s[26]), 
@@ -2428,7 +2470,7 @@ ACS acs_inst_27  (
              .prev_high2_i   (pm_r_s_21),   
              .prev_high3_i   (pm_r_s_29),   
              .prev_high4_i   (pm_r_s_45),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd27 ), 
              .pm_o           (pm_tmp_s_27), 
              .survivor_path_o(survivor_path_s[27]), 
@@ -2448,7 +2490,7 @@ ACS acs_inst_28  (
              .prev_high2_i   (pm_r_s_22),   
              .prev_high3_i   (pm_r_s_30),   
              .prev_high4_i   (pm_r_s_46),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd28 ), 
              .pm_o           (pm_tmp_s_28), 
              .survivor_path_o(survivor_path_s[28]), 
@@ -2468,7 +2510,7 @@ ACS acs_inst_29  (
              .prev_high2_i   (pm_r_s_22),   
              .prev_high3_i   (pm_r_s_30),   
              .prev_high4_i   (pm_r_s_46),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd29 ), 
              .pm_o           (pm_tmp_s_29), 
              .survivor_path_o(survivor_path_s[29]), 
@@ -2488,7 +2530,7 @@ ACS acs_inst_30  (
              .prev_high2_i   (pm_r_s_23),   
              .prev_high3_i   (pm_r_s_31),   
              .prev_high4_i   (pm_r_s_47),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd30 ), 
              .pm_o           (pm_tmp_s_30), 
              .survivor_path_o(survivor_path_s[30]), 
@@ -2508,7 +2550,7 @@ ACS acs_inst_31  (
              .prev_high2_i   (pm_r_s_23),   
              .prev_high3_i   (pm_r_s_31),   
              .prev_high4_i   (pm_r_s_47),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd31 ), 
              .pm_o           (pm_tmp_s_31), 
              .survivor_path_o(survivor_path_s[31]), 
@@ -2528,7 +2570,7 @@ ACS acs_inst_32  (
              .prev_high2_i   (pm_r_s_24),   
              .prev_high3_i   (pm_r_s_32),   
              .prev_high4_i   (pm_r_s_48),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd32 ), 
              .pm_o           (pm_tmp_s_32), 
              .survivor_path_o(survivor_path_s[32]), 
@@ -2548,7 +2590,7 @@ ACS acs_inst_33  (
              .prev_high2_i   (pm_r_s_24),   
              .prev_high3_i   (pm_r_s_32),   
              .prev_high4_i   (pm_r_s_48),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd33 ), 
              .pm_o           (pm_tmp_s_33), 
              .survivor_path_o(survivor_path_s[33]), 
@@ -2568,7 +2610,7 @@ ACS acs_inst_34  (
              .prev_high2_i   (pm_r_s_25),   
              .prev_high3_i   (pm_r_s_33),   
              .prev_high4_i   (pm_r_s_49),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd34 ), 
              .pm_o           (pm_tmp_s_34), 
              .survivor_path_o(survivor_path_s[34]), 
@@ -2588,7 +2630,7 @@ ACS acs_inst_35  (
              .prev_high2_i   (pm_r_s_25),   
              .prev_high3_i   (pm_r_s_33),   
              .prev_high4_i   (pm_r_s_49),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd35 ), 
              .pm_o           (pm_tmp_s_35), 
              .survivor_path_o(survivor_path_s[35]), 
@@ -2608,7 +2650,7 @@ ACS acs_inst_36  (
              .prev_high2_i   (pm_r_s_26),   
              .prev_high3_i   (pm_r_s_34),   
              .prev_high4_i   (pm_r_s_50),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd36 ), 
              .pm_o           (pm_tmp_s_36), 
              .survivor_path_o(survivor_path_s[36]), 
@@ -2628,7 +2670,7 @@ ACS acs_inst_37  (
              .prev_high2_i   (pm_r_s_26),   
              .prev_high3_i   (pm_r_s_34),   
              .prev_high4_i   (pm_r_s_50),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd37 ), 
              .pm_o           (pm_tmp_s_37), 
              .survivor_path_o(survivor_path_s[37]), 
@@ -2648,7 +2690,7 @@ ACS acs_inst_38  (
              .prev_high2_i   (pm_r_s_27),   
              .prev_high3_i   (pm_r_s_35),   
              .prev_high4_i   (pm_r_s_51),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd38 ), 
              .pm_o           (pm_tmp_s_38), 
              .survivor_path_o(survivor_path_s[38]), 
@@ -2668,7 +2710,7 @@ ACS acs_inst_39  (
              .prev_high2_i   (pm_r_s_27),   
              .prev_high3_i   (pm_r_s_35),   
              .prev_high4_i   (pm_r_s_51),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd39 ), 
              .pm_o           (pm_tmp_s_39), 
              .survivor_path_o(survivor_path_s[39]), 
@@ -2688,7 +2730,7 @@ ACS acs_inst_40  (
              .prev_high2_i   (pm_r_s_28),   
              .prev_high3_i   (pm_r_s_36),   
              .prev_high4_i   (pm_r_s_52),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd40 ), 
              .pm_o           (pm_tmp_s_40), 
              .survivor_path_o(survivor_path_s[40]), 
@@ -2708,7 +2750,7 @@ ACS acs_inst_41  (
              .prev_high2_i   (pm_r_s_28),   
              .prev_high3_i   (pm_r_s_36),   
              .prev_high4_i   (pm_r_s_52),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd41 ), 
              .pm_o           (pm_tmp_s_41), 
              .survivor_path_o(survivor_path_s[41]), 
@@ -2728,7 +2770,7 @@ ACS acs_inst_42  (
              .prev_high2_i   (pm_r_s_29),   
              .prev_high3_i   (pm_r_s_37),   
              .prev_high4_i   (pm_r_s_53),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd42 ), 
              .pm_o           (pm_tmp_s_42), 
              .survivor_path_o(survivor_path_s[42]), 
@@ -2748,7 +2790,7 @@ ACS acs_inst_43  (
              .prev_high2_i   (pm_r_s_29),   
              .prev_high3_i   (pm_r_s_37),   
              .prev_high4_i   (pm_r_s_53),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd43 ), 
              .pm_o           (pm_tmp_s_43), 
              .survivor_path_o(survivor_path_s[43]), 
@@ -2768,7 +2810,7 @@ ACS acs_inst_44  (
              .prev_high2_i   (pm_r_s_30),   
              .prev_high3_i   (pm_r_s_38),   
              .prev_high4_i   (pm_r_s_54),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd44 ), 
              .pm_o           (pm_tmp_s_44), 
              .survivor_path_o(survivor_path_s[44]), 
@@ -2788,7 +2830,7 @@ ACS acs_inst_45  (
              .prev_high2_i   (pm_r_s_30),   
              .prev_high3_i   (pm_r_s_38),   
              .prev_high4_i   (pm_r_s_54),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd45 ), 
              .pm_o           (pm_tmp_s_45), 
              .survivor_path_o(survivor_path_s[45]), 
@@ -2808,7 +2850,7 @@ ACS acs_inst_46  (
              .prev_high2_i   (pm_r_s_31),   
              .prev_high3_i   (pm_r_s_39),   
              .prev_high4_i   (pm_r_s_55),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd46 ), 
              .pm_o           (pm_tmp_s_46), 
              .survivor_path_o(survivor_path_s[46]), 
@@ -2828,7 +2870,7 @@ ACS acs_inst_47  (
              .prev_high2_i   (pm_r_s_31),   
              .prev_high3_i   (pm_r_s_39),   
              .prev_high4_i   (pm_r_s_55),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd47 ), 
              .pm_o           (pm_tmp_s_47), 
              .survivor_path_o(survivor_path_s[47]), 
@@ -2848,7 +2890,7 @@ ACS acs_inst_48  (
              .prev_high2_i   (pm_r_s_32),   
              .prev_high3_i   (pm_r_s_40),   
              .prev_high4_i   (pm_r_s_56),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd48 ), 
              .pm_o           (pm_tmp_s_48), 
              .survivor_path_o(survivor_path_s[48]), 
@@ -2868,7 +2910,7 @@ ACS acs_inst_49  (
              .prev_high2_i   (pm_r_s_32),   
              .prev_high3_i   (pm_r_s_40),   
              .prev_high4_i   (pm_r_s_56),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd49 ), 
              .pm_o           (pm_tmp_s_49), 
              .survivor_path_o(survivor_path_s[49]), 
@@ -2888,7 +2930,7 @@ ACS acs_inst_50  (
              .prev_high2_i   (pm_r_s_33),   
              .prev_high3_i   (pm_r_s_41),   
              .prev_high4_i   (pm_r_s_57),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd50 ), 
              .pm_o           (pm_tmp_s_50), 
              .survivor_path_o(survivor_path_s[50]), 
@@ -2908,7 +2950,7 @@ ACS acs_inst_51  (
              .prev_high2_i   (pm_r_s_33),   
              .prev_high3_i   (pm_r_s_41),   
              .prev_high4_i   (pm_r_s_57),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd51 ), 
              .pm_o           (pm_tmp_s_51), 
              .survivor_path_o(survivor_path_s[51]), 
@@ -2928,7 +2970,7 @@ ACS acs_inst_52  (
              .prev_high2_i   (pm_r_s_34),   
              .prev_high3_i   (pm_r_s_42),   
              .prev_high4_i   (pm_r_s_58),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd52 ), 
              .pm_o           (pm_tmp_s_52), 
              .survivor_path_o(survivor_path_s[52]), 
@@ -2948,7 +2990,7 @@ ACS acs_inst_53  (
              .prev_high2_i   (pm_r_s_34),   
              .prev_high3_i   (pm_r_s_42),   
              .prev_high4_i   (pm_r_s_58),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd53 ), 
              .pm_o           (pm_tmp_s_53), 
              .survivor_path_o(survivor_path_s[53]), 
@@ -2968,7 +3010,7 @@ ACS acs_inst_54  (
              .prev_high2_i   (pm_r_s_35),   
              .prev_high3_i   (pm_r_s_43),   
              .prev_high4_i   (pm_r_s_59),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd54 ), 
              .pm_o           (pm_tmp_s_54), 
              .survivor_path_o(survivor_path_s[54]), 
@@ -2988,7 +3030,7 @@ ACS acs_inst_55  (
              .prev_high2_i   (pm_r_s_35),   
              .prev_high3_i   (pm_r_s_43),   
              .prev_high4_i   (pm_r_s_59),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd55 ), 
              .pm_o           (pm_tmp_s_55), 
              .survivor_path_o(survivor_path_s[55]), 
@@ -3008,7 +3050,7 @@ ACS acs_inst_56  (
              .prev_high2_i   (pm_r_s_36),   
              .prev_high3_i   (pm_r_s_44),   
              .prev_high4_i   (pm_r_s_60),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd56 ), 
              .pm_o           (pm_tmp_s_56), 
              .survivor_path_o(survivor_path_s[56]), 
@@ -3028,7 +3070,7 @@ ACS acs_inst_57  (
              .prev_high2_i   (pm_r_s_36),   
              .prev_high3_i   (pm_r_s_44),   
              .prev_high4_i   (pm_r_s_60),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd57 ), 
              .pm_o           (pm_tmp_s_57), 
              .survivor_path_o(survivor_path_s[57]), 
@@ -3048,7 +3090,7 @@ ACS acs_inst_58  (
              .prev_high2_i   (pm_r_s_37),   
              .prev_high3_i   (pm_r_s_45),   
              .prev_high4_i   (pm_r_s_61),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd58 ), 
              .pm_o           (pm_tmp_s_58), 
              .survivor_path_o(survivor_path_s[58]), 
@@ -3068,7 +3110,7 @@ ACS acs_inst_59  (
              .prev_high2_i   (pm_r_s_37),   
              .prev_high3_i   (pm_r_s_45),   
              .prev_high4_i   (pm_r_s_61),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd59 ), 
              .pm_o           (pm_tmp_s_59), 
              .survivor_path_o(survivor_path_s[59]), 
@@ -3088,7 +3130,7 @@ ACS acs_inst_60  (
              .prev_high2_i   (pm_r_s_38),   
              .prev_high3_i   (pm_r_s_46),   
              .prev_high4_i   (pm_r_s_62),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd60 ), 
              .pm_o           (pm_tmp_s_60), 
              .survivor_path_o(survivor_path_s[60]), 
@@ -3108,7 +3150,7 @@ ACS acs_inst_61  (
              .prev_high2_i   (pm_r_s_38),   
              .prev_high3_i   (pm_r_s_46),   
              .prev_high4_i   (pm_r_s_62),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd61 ), 
              .pm_o           (pm_tmp_s_61), 
              .survivor_path_o(survivor_path_s[61]), 
@@ -3128,7 +3170,7 @@ ACS acs_inst_62  (
              .prev_high2_i   (pm_r_s_39),   
              .prev_high3_i   (pm_r_s_47),   
              .prev_high4_i   (pm_r_s_63),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd62 ), 
              .pm_o           (pm_tmp_s_62), 
              .survivor_path_o(survivor_path_s[62]), 
@@ -3148,7 +3190,7 @@ ACS acs_inst_63  (
              .prev_high2_i   (pm_r_s_39),   
              .prev_high3_i   (pm_r_s_47),   
              .prev_high4_i   (pm_r_s_63),   
-              .tail_biting_en (tail_biting_en_i), 
+             .tail_biting_en_i (tail_biting_en_i),
              .state_k_i      ( 6'd63 ), 
              .pm_o           (pm_tmp_s_63), 
              .survivor_path_o(survivor_path_s[63]), 

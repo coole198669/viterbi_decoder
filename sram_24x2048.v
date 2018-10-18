@@ -5,7 +5,7 @@
 // 
 // Create Date:    21:21:57 10/06/2018 
 // Design Name: 
-// Module Name:    sram_64x64 
+// Module Name:    sram_24x2048 
 // Project Name: 
 // Target Devices: 
 // Tool versions: 
@@ -18,26 +18,26 @@
 // Additional Comments: 
 //
 //////////////////////////////////////////////////////////////////////////////////
-module sram_64x64(
+module sram_24x2048(
     input                   clk_i,
     input                   rst_i,
     input                   wr_en_i,
     input                   rd_en_i,
-    input [5:0]             addr_i,
-    input [63:0]            wdata_i,
-	 output [63:0]           rdata_o
+    input [10:0]             addr_i,
+    input [23:0]            wdata_i,
+	 output [23:0]           rdata_o
 );
 
-    reg [63:0]          bram[63:0];    
+    reg [23:0]          bram[2047:0];    
     integer          i;   
-    reg [63:0]       data;
+    reg [23:0]       data;
 //add implementation code here 
-    always @(posedge clk_i or negedge rst_i)
+    always @(posedge clk_i or posedge rst_i)
     begin
-       if (~rst_i)   
+       if (rst_i)   
          begin
-           for(i=0;i<=63;i=i+1) //reset, 按字操作
-           bram[i] <= 64'b0;
+           for(i=0;i<=2047;i=i+1) //reset, 鎸夊瓧鎿嶄綔
+           bram[i] <= 23'b0;
          end
        else if (wr_en_i) begin
             bram[addr_i] <= wdata_i;
@@ -45,9 +45,9 @@ module sram_64x64(
        else if (rd_en_i) begin
             data <= bram[addr_i];
        end
-      // else begin
-       // data <= 64'bz;      //读写均无效时，为高阻态。若不加此句，时序会出现问题
-       //end
+       else begin
+        data <= 23'bz;      //璇诲啓鍧囨棤鏁堟椂锛屼负楂橀樆鎬併�傝嫢涓嶅姞姝ゅ彞锛屾椂搴忎細鍑虹幇闂
+       end
     end
 
     assign rdata_o = data ;

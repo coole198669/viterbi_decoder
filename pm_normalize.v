@@ -18,7 +18,7 @@
 // Additional Comments: 
 //
 //////////////////////////////////////////////////////////////////////////////////
-module pm_normalize #(parameter WIDTH_BM = 8)(
+module pm_normalize #(parameter WIDTH_BM = 9)(
     input clk_i,
     input rst_an_i,
     input rst_sync_i,

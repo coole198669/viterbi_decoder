@@ -14,7 +14,7 @@ module traceback #(parameter W_TB_LEN=6,W_HALF=32,W_FULL=64)(
     //input parameter 
     input [5:0]              start_state_index_i,
     input [W_TB_LEN-1:0]     tb_start_addr_i,
-    input [W_TB_LEN-1:0]     tb_len_i,
+    input [W_TB_LEN:0]     tb_len_i,
     input                    decodeing_end_i, 
     //out stream
     output [W_HALF-1:0] half_tb_bits_o,
@@ -34,10 +34,10 @@ reg [W_TB_LEN-1:0]   tb_addr_r;
 reg                   tb_rd_r;
 
 
-reg [W_TB_LEN-1:0]     tb_len_r;
+reg [W_TB_LEN:0]     tb_len_r;
 reg                    decodeing_end_r; 
 
-reg [W_TB_LEN:0]     tb_counter_r;
+reg [W_TB_LEN+1:0]     tb_counter_r;
 reg                  busy_r;
 reg [5:0]            left_shif_num_r;
 reg                  get_bit_s;
@@ -52,7 +52,7 @@ assign tb_rd_o   = tb_rd_r;
 assign tb_addr_o = tb_addr_r;
 assign half_tb_bits_o =half_tb_bits_r;
 assign full_tb_bits_o = full_tb_bits_r;  
-assign   tb_bits_valid_o = tb_counter_r==0 ? 1:0;
+assign   tb_bits_valid_o = tb_counter_r==1 ? 1:0;
 always@(posedge clk_i or negedge rst_an_i) begin
    if(!rst_an_i) begin 
      tb_len_r            <= 0;    
@@ -71,7 +71,7 @@ end
 always@(posedge clk_i or negedge rst_an_i) begin
   if(!rst_an_i)  tb_counter_r <= 0;
   else if(rst_sync_i) tb_counter_r <= 0;
-  else if(segment_start_i)  tb_counter_r <= tb_len_i;
+  else if(segment_start_i)  tb_counter_r <= tb_len_i<<1;
   else if(tb_counter_r!=0) tb_counter_r <= tb_counter_r -1;
 end  
 
@@ -93,7 +93,7 @@ always@(posedge clk_i or negedge rst_an_i) begin
   if(!rst_an_i)              tb_addr_r <= 0;  
   else if(rst_sync_i)        tb_addr_r <= 0;  
   else if(segment_start_i)   tb_addr_r <= tb_start_addr_i;  
-  else if(tb_counter_r!=0 && tb_counter_r[1]==1'b0)     tb_addr_r <= tb_addr_r-1;
+  else if(tb_counter_r!=0 && tb_counter_r[0]==1'b0)     tb_addr_r <= tb_addr_r-1;
 end
 
 

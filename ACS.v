@@ -18,7 +18,7 @@
 // Additional Comments: 
 //
 //////////////////////////////////////////////////////////////////////////////////
-module ACS #(parameter WIDTH_BM = 8) (
+module ACS #(parameter WIDTH_BM = 9) (
     input clk_i,
     input rst_an_i,
     input rst_sync_i,
@@ -31,9 +31,9 @@ module ACS #(parameter WIDTH_BM = 8) (
     input [WIDTH_BM-1:0] prev_high2_i,
     input [WIDTH_BM-1:0] prev_high3_i,
     input [WIDTH_BM-1:0] prev_high4_i,
-    input tail_biting_en,
+    input tail_biting_en_i,
     input [5:0] state_k_i,
-    output [WIDTH_BM:0] pm_o,
+    output [WIDTH_BM-1:0] pm_o,
     output survivor_path_o,
     output valid_o
     );
@@ -66,7 +66,7 @@ module ACS #(parameter WIDTH_BM = 8) (
       else if( state_k_i<8) prev_high_s = prev_high1_i;
     end
     
-    assign init_prev_s = tail_biting_en ? Initial_Lower : 0;    
+    assign init_prev_s = tail_biting_en_i ? Initial_Lower : 0;    
     assign prev_low_tmp_s  = is_t0_i ? init_prev_s : $signed(prev_low_i);
     assign prev_high_tmp_s = is_t0_i ? init_prev_s : $signed(prev_high_s);
     assign bm_s        = $signed(bm_i);
@@ -94,7 +94,7 @@ module ACS #(parameter WIDTH_BM = 8) (
           pm_r <= pm_low_s;  
         end 
         else begin
-          survivor_path_r <= 1'b0;
+          survivor_path_r <= 1'b1;
           pm_r <= pm_high_s;     
         end     
       end

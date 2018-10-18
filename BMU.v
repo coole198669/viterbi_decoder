@@ -20,7 +20,7 @@
 // Additional Comments: 
 //
 //////////////////////////////////////////////////////////////////////////////////
-module BMU  #(parameter WIDTH_BM = 8 ) (
+module BMU  #(parameter WIDTH_BM = 9 ) (
     input clk_i,
     input rst_an_i,
     input rst_sync_i,    
@@ -142,11 +142,12 @@ always@(posedge clk_i or negedge rst_an_i) begin
     low_codeword <= 6'h0;
   else if( calc_codeword_en ) begin
     case( valid_polynomials_i)
-      3'b000 : low_codeword <= low_codeword_tmp;
-      3'b001 : low_codeword <= {1'b0, low_codeword_tmp[4:0]};   
+      3'b000 : low_codeword <= {4'b0, low_codeword_tmp[1:0]}; 
+      3'b001 : low_codeword <= {3'b0, low_codeword_tmp[2:0]};  
       3'b010 : low_codeword <= {2'b0, low_codeword_tmp[3:0]};
-      3'b011 : low_codeword <= {3'b0, low_codeword_tmp[2:0]};
-      default: low_codeword <= {4'b0, low_codeword_tmp[1:0]};           
+      3'b011 : low_codeword <= {1'b0, low_codeword_tmp[4:0]}; 
+      3'b100:  low_codeword <= low_codeword_tmp;
+	  default:  low_codeword <= 6'b000000;           
     endcase
   end   
 end
@@ -159,12 +160,12 @@ assign soft_bit3 =  soft_data_i[15:12];
 assign soft_bit4 =  soft_data_i[19:16];
 assign soft_bit5 =  soft_data_i[23:20];
 
-assign x_soft_bit0 =  low_codeword[0]? soft_bit0 : {soft_bit0[3],soft_bit0[2:0]};
-assign x_soft_bit1 =  low_codeword[1]? soft_bit1 : {soft_bit1[3],soft_bit1[2:0]};
-assign x_soft_bit2 =  low_codeword[2]? soft_bit2 : {soft_bit2[3],soft_bit2[2:0]};
-assign x_soft_bit3 =  low_codeword[3]? soft_bit3 : {soft_bit3[3],soft_bit3[2:0]};
-assign x_soft_bit4 =  low_codeword[4]? soft_bit4 : {soft_bit4[3],soft_bit4[2:0]};
-assign x_soft_bit5 =  low_codeword[5]? soft_bit5 : {soft_bit5[3],soft_bit5[2:0]};
+assign x_soft_bit0 =  low_codeword[0]? soft_bit0 : -soft_bit0;
+assign x_soft_bit1 =  low_codeword[1]? soft_bit1 : -soft_bit1;
+assign x_soft_bit2 =  low_codeword[2]? soft_bit2 : -soft_bit2;
+assign x_soft_bit3 =  low_codeword[3]? soft_bit3 : -soft_bit3;
+assign x_soft_bit4 =  low_codeword[4]? soft_bit4 : -soft_bit4;
+assign x_soft_bit5 =  low_codeword[5]? soft_bit5 : -soft_bit5;
 
 always@(posedge clk_i or negedge rst_an_i) begin
   if(!rst_an_i) begin
@@ -178,11 +179,12 @@ always@(posedge clk_i or negedge rst_an_i) begin
   else if( soft_data_valid_i ) begin
     bm_valid_r <= 1'b1;
     case( valid_polynomials_i)
-      3'b000 : bm_r <=  x_soft_bit5 + x_soft_bit4 + x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
-      3'b001 : bm_r <=  x_soft_bit4 + x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0; 
+      3'b000 : bm_r <=  x_soft_bit1 + x_soft_bit0; 
+      3'b001 : bm_r <=  x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
       3'b010 : bm_r <=  x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
-      3'b011 : bm_r <=  x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
-      default: bm_r <=  x_soft_bit1 + x_soft_bit0; 
+      3'b011 : bm_r <=  x_soft_bit4 + x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0; 
+      3'b100 : bm_r <=  x_soft_bit5 + x_soft_bit4 + x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
+	  default: bm_r <= 0;
     endcase    
   end 
   else begin
