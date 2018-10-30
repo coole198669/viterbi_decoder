@@ -49,8 +49,8 @@ reg [5:0] low_codeword_tmp,low_codeword;
 
 wire [5:0] half_polyn_tmp;
 
-wire [3:0] soft_bit0,soft_bit1,soft_bit2,soft_bit3,soft_bit4,soft_bit5; 
-wire signed [3:0] x_soft_bit0,x_soft_bit1,x_soft_bit2,x_soft_bit3,x_soft_bit4,x_soft_bit5; 
+wire signed [3:0] soft_bit0,soft_bit1,soft_bit2,soft_bit3,soft_bit4,soft_bit5; 
+wire signed [4:0] x_soft_bit0,x_soft_bit1,x_soft_bit2,x_soft_bit3,x_soft_bit4,x_soft_bit5; 
 
 reg signed [WIDTH_BM-1:0] bm_r;
 reg bm_valid_r;
@@ -85,7 +85,7 @@ always@(posedge clk_i or negedge rst_an_i) begin
 end
 
 // gen the code word of the low path 
-  assign half_polyn_tmp[0] = ( state_x_i[2] & polynomial1_i[2] ) ^ ( state_x_i[1] & polynomial1_i[1] ) ^ ( state_x_i[0] & polynomial1_i[0] ) ;
+ assign half_polyn_tmp[0] = ( state_x_i[2] & polynomial1_i[2] ) ^ ( state_x_i[1] & polynomial1_i[1] ) ^ ( state_x_i[0] & polynomial1_i[0] ) ;
   assign half_polyn_tmp[1] = ( state_x_i[2] & polynomial2_i[2] ) ^ ( state_x_i[1] & polynomial2_i[1] ) ^ ( state_x_i[0] & polynomial2_i[0] ) ;
   assign half_polyn_tmp[2] = ( state_x_i[2] & polynomial3_i[2] ) ^ ( state_x_i[1] & polynomial3_i[1] ) ^ ( state_x_i[0] & polynomial3_i[0] ) ;
   assign half_polyn_tmp[3] = ( state_x_i[2] & polynomial4_i[2] ) ^ ( state_x_i[1] & polynomial4_i[1] ) ^ ( state_x_i[0] & polynomial4_i[0] ) ;
@@ -134,6 +134,60 @@ always@(posedge clk_i or negedge rst_an_i) begin
     endcase
   end
  end        
+/*
+  assign half_polyn_tmp[0] = ( state_x_i[2] & polynomial1_i[4] ) ^ ( state_x_i[1] & polynomial1_i[5] ) ^ ( state_x_i[0] & polynomial1_i[6] ) ;
+  assign half_polyn_tmp[1] = ( state_x_i[2] & polynomial2_i[4] ) ^ ( state_x_i[1] & polynomial2_i[5] ) ^ ( state_x_i[0] & polynomial2_i[6] ) ;
+  assign half_polyn_tmp[2] = ( state_x_i[2] & polynomial3_i[4] ) ^ ( state_x_i[1] & polynomial3_i[5] ) ^ ( state_x_i[0] & polynomial3_i[6] ) ;
+  assign half_polyn_tmp[3] = ( state_x_i[2] & polynomial4_i[4] ) ^ ( state_x_i[1] & polynomial4_i[5] ) ^ ( state_x_i[0] & polynomial4_i[6] ) ;
+  assign half_polyn_tmp[4] = ( state_x_i[2] & polynomial5_i[4] ) ^ ( state_x_i[1] & polynomial5_i[5] ) ^ ( state_x_i[0] & polynomial5_i[6] ) ;
+  assign half_polyn_tmp[5] = ( state_x_i[2] & polynomial6_i[4] ) ^ ( state_x_i[1] & polynomial6_i[5] ) ^ ( state_x_i[0] & polynomial6_i[6] ) ;      
+
+always@(posedge clk_i or negedge rst_an_i) begin
+  if(!rst_an_i)
+    low_codeword_tmp <= 6'h0;
+  else if(rst_sync_i)
+    low_codeword_tmp <= 6'h0;
+  else if(calc_polyn_en) begin
+    case(register_num_i)
+      2'b00: begin
+        low_codeword_tmp[0] <= ( state_x_i[5] & polynomial1_i[1] ) ^ ( state_x_i[4] & polynomial1_i[2] ) ^ ( state_x_i[3] & polynomial1_i[3] ) ^ half_polyn_tmp[0] ;
+        low_codeword_tmp[1] <= ( state_x_i[5] & polynomial2_i[1] ) ^ ( state_x_i[4] & polynomial2_i[2] ) ^ ( state_x_i[3] & polynomial2_i[3] ) ^ half_polyn_tmp[1] ;
+        low_codeword_tmp[2] <= ( state_x_i[5] & polynomial3_i[1] ) ^ ( state_x_i[4] & polynomial3_i[2] ) ^ ( state_x_i[3] & polynomial3_i[3] ) ^ half_polyn_tmp[2] ;
+        low_codeword_tmp[3] <= ( state_x_i[5] & polynomial4_i[1] ) ^ ( state_x_i[4] & polynomial4_i[2] ) ^ ( state_x_i[3] & polynomial4_i[3] ) ^ half_polyn_tmp[3] ;
+        low_codeword_tmp[4] <= ( state_x_i[5] & polynomial5_i[1] ) ^ ( state_x_i[4] & polynomial5_i[2] ) ^ ( state_x_i[3] & polynomial5_i[3] ) ^ half_polyn_tmp[4] ;
+        low_codeword_tmp[5] <= ( state_x_i[5] & polynomial6_i[1] ) ^ ( state_x_i[4] & polynomial6_i[2] ) ^ ( state_x_i[3] & polynomial6_i[3] ) ^ half_polyn_tmp[5] ;        
+      end
+      2'b01: begin
+        low_codeword_tmp[0] <= ( state_x_i[4] & polynomial1_i[1] ) ^ ( state_x_i[3] & polynomial1_i[2] ) ^ ( state_x_i[2] & polynomial1_i[3] ) ^ ( state_x_i[1] & polynomial1_i[4] ) ^ ( state_x_i[0] & polynomial1_i[5] ) ;
+        low_codeword_tmp[1] <= ( state_x_i[4] & polynomial2_i[1] ) ^ ( state_x_i[3] & polynomial2_i[2] ) ^ ( state_x_i[2] & polynomial2_i[3] ) ^ ( state_x_i[1] & polynomial2_i[4] ) ^ ( state_x_i[0] & polynomial2_i[5] ) ;
+        low_codeword_tmp[2] <= ( state_x_i[4] & polynomial3_i[1] ) ^ ( state_x_i[3] & polynomial3_i[2] ) ^ ( state_x_i[2] & polynomial3_i[3] ) ^ ( state_x_i[1] & polynomial3_i[4] ) ^ ( state_x_i[0] & polynomial3_i[5] ) ;
+        low_codeword_tmp[3] <= ( state_x_i[4] & polynomial4_i[1] ) ^ ( state_x_i[3] & polynomial4_i[2] ) ^ ( state_x_i[2] & polynomial4_i[3] ) ^ ( state_x_i[1] & polynomial4_i[4] ) ^ ( state_x_i[0] & polynomial4_i[5] ) ;
+        low_codeword_tmp[4] <= ( state_x_i[4] & polynomial5_i[1] ) ^ ( state_x_i[3] & polynomial5_i[2] ) ^ ( state_x_i[2] & polynomial5_i[3] ) ^ ( state_x_i[1] & polynomial5_i[4] ) ^ ( state_x_i[0] & polynomial5_i[5] ) ;
+        low_codeword_tmp[5] <= ( state_x_i[4] & polynomial6_i[1] ) ^ ( state_x_i[3] & polynomial6_i[2] ) ^ ( state_x_i[2] & polynomial6_i[3] ) ^ ( state_x_i[1] & polynomial6_i[4] ) ^ ( state_x_i[0] & polynomial6_i[5] ) ;              
+      end
+      2'b10:  begin
+        low_codeword_tmp[0] <= ( state_x_i[3] & polynomial1_i[1] ) ^ ( state_x_i[2] & polynomial1_i[2] ) ^ ( state_x_i[1] & polynomial1_i[3] ) ^ ( state_x_i[0] & polynomial1_i[4] );
+        low_codeword_tmp[1] <= ( state_x_i[3] & polynomial2_i[1] ) ^ ( state_x_i[2] & polynomial2_i[2] ) ^ ( state_x_i[1] & polynomial2_i[3] ) ^ ( state_x_i[0] & polynomial2_i[4] );
+        low_codeword_tmp[2] <= ( state_x_i[3] & polynomial3_i[1] ) ^ ( state_x_i[2] & polynomial3_i[2] ) ^ ( state_x_i[1] & polynomial3_i[3] ) ^ ( state_x_i[0] & polynomial3_i[4] );
+        low_codeword_tmp[3] <= ( state_x_i[3] & polynomial4_i[1] ) ^ ( state_x_i[2] & polynomial4_i[2] ) ^ ( state_x_i[1] & polynomial4_i[3] ) ^ ( state_x_i[0] & polynomial4_i[4] );
+        low_codeword_tmp[4] <= ( state_x_i[3] & polynomial5_i[1] ) ^ ( state_x_i[2] & polynomial5_i[2] ) ^ ( state_x_i[1] & polynomial5_i[3] ) ^ ( state_x_i[0] & polynomial5_i[4] );
+        low_codeword_tmp[5] <= ( state_x_i[3] & polynomial6_i[1] ) ^ ( state_x_i[2] & polynomial6_i[2] ) ^ ( state_x_i[1] & polynomial6_i[3] ) ^ ( state_x_i[0] & polynomial6_i[4] );        
+      end
+      default:  begin
+        low_codeword_tmp[0] <=  ( state_x_i[2] & polynomial1_i[1] ) ^ ( state_x_i[1] & polynomial1_i[2] ) ^ ( state_x_i[0] & polynomial1_i[3] )  ;
+        low_codeword_tmp[1] <=  ( state_x_i[2] & polynomial2_i[1] ) ^ ( state_x_i[1] & polynomial2_i[2] ) ^ ( state_x_i[0] & polynomial2_i[3] )  ;
+        low_codeword_tmp[2] <=  ( state_x_i[2] & polynomial3_i[1] ) ^ ( state_x_i[1] & polynomial3_i[2] ) ^ ( state_x_i[0] & polynomial3_i[3] )  ;
+        low_codeword_tmp[3] <=  ( state_x_i[2] & polynomial4_i[1] ) ^ ( state_x_i[1] & polynomial4_i[2] ) ^ ( state_x_i[0] & polynomial4_i[3] )  ;
+        low_codeword_tmp[4] <=  ( state_x_i[2] & polynomial5_i[1] ) ^ ( state_x_i[1] & polynomial5_i[2] ) ^ ( state_x_i[0] & polynomial5_i[3] )  ;
+        low_codeword_tmp[5] <=  ( state_x_i[2] & polynomial6_i[1] ) ^ ( state_x_i[1] & polynomial6_i[2] ) ^ ( state_x_i[0] & polynomial6_i[3] )  ;
+      end                   
+    endcase
+  end
+ end    
+
+*/
+
+ 
 // gen the code word of the low path 
 always@(posedge clk_i or negedge rst_an_i) begin
   if(!rst_an_i) 
@@ -153,19 +207,22 @@ always@(posedge clk_i or negedge rst_an_i) begin
 end
 
 // gen the branch metric of the low path
-assign soft_bit0 =  soft_data_i[3:0];
-assign soft_bit1 =  soft_data_i[7:4];
-assign soft_bit2 =  soft_data_i[11:8];
-assign soft_bit3 =  soft_data_i[15:12];
-assign soft_bit4 =  soft_data_i[19:16];
-assign soft_bit5 =  soft_data_i[23:20];
+assign soft_bit0 =  $signed (soft_data_i[3:0]);
+assign soft_bit1 =  $signed (soft_data_i[7:4]);
+assign soft_bit2 =  $signed (soft_data_i[11:8]);
+assign soft_bit3 =  $signed (soft_data_i[15:12]);
+assign soft_bit4 =  $signed (soft_data_i[19:16]);
+assign soft_bit5 =  $signed (soft_data_i[23:20]);
 
-assign x_soft_bit0 =  low_codeword[0]? soft_bit0 : -soft_bit0;
-assign x_soft_bit1 =  low_codeword[1]? soft_bit1 : -soft_bit1;
-assign x_soft_bit2 =  low_codeword[2]? soft_bit2 : -soft_bit2;
-assign x_soft_bit3 =  low_codeword[3]? soft_bit3 : -soft_bit3;
-assign x_soft_bit4 =  low_codeword[4]? soft_bit4 : -soft_bit4;
-assign x_soft_bit5 =  low_codeword[5]? soft_bit5 : -soft_bit5;
+
+
+
+assign x_soft_bit0 =  low_codeword[0]? -soft_bit0 : soft_bit0;
+assign x_soft_bit1 =  low_codeword[1]? -soft_bit1 : soft_bit1;
+assign x_soft_bit2 =  low_codeword[2]? -soft_bit2 : soft_bit2;
+assign x_soft_bit3 =  low_codeword[3]? -soft_bit3 : soft_bit3;
+assign x_soft_bit4 =  low_codeword[4]? -soft_bit4 : soft_bit4;
+assign x_soft_bit5 =  low_codeword[5]? -soft_bit5 : soft_bit5;
 
 always@(posedge clk_i or negedge rst_an_i) begin
   if(!rst_an_i) begin

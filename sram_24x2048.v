@@ -32,9 +32,9 @@ module sram_24x2048(
     integer          i;   
     reg [23:0]       data;
 //add implementation code here 
-    always @(posedge clk_i or posedge rst_i)
+    always @(posedge clk_i or negedge rst_i)
     begin
-       if (rst_i)   
+       if (!rst_i)   
          begin
            for(i=0;i<=2047;i=i+1) //reset, 按字操作
            bram[i] <= 23'b0;
@@ -45,9 +45,9 @@ module sram_24x2048(
        else if (rd_en_i) begin
             data <= bram[addr_i];
        end
-       else begin
-        data <= 23'bz;      //读写均无效时，为高阻态。若不加此句，时序会出现问题
-       end
+      // else begin
+       // data <= 23'bz;      //读写均无效时，为高阻态。若不加此句，时序会出现问题
+       //end
     end
 
     assign rdata_o = data ;

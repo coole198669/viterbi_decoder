@@ -23,7 +23,8 @@ module ACS #(parameter WIDTH_BM = 9) (
     input rst_an_i,
     input rst_sync_i,
     input en_i,
-    input is_t0_i,
+	 input [1:0] register_num_i,
+    //input is_t0_i,
     input [WIDTH_BM-1:0] bm_i,
     input bm_valid_i,
     input [WIDTH_BM-1:0] prev_low_i,
@@ -47,8 +48,8 @@ module ACS #(parameter WIDTH_BM = 9) (
     wire signed [WIDTH_BM-1:0] pm_high_s;
     wire signed [WIDTH_BM-1:0] pm_low_s;
     wire signed [WIDTH_BM-1:0] bm_s;
-    wire signed [WIDTH_BM-1:0] init_prev_s;
-
+    //wire signed [WIDTH_BM-1:0] init_prev_s;
+    //wire signed [WIDTH_BM-1:0] init_state0_s;
     
     
     reg valid_r;
@@ -59,16 +60,22 @@ module ACS #(parameter WIDTH_BM = 9) (
     assign survivor_path_o = survivor_path_r;
     assign pm_o = pm_r;
     
-    always@( state_k_i or prev_high1_i or prev_high2_i or prev_high3_i or prev_high4_i ) begin
-      if(state_k_i>=32) prev_high_s = prev_high4_i;
-      else if(state_k_i>=16 && state_k_i<32) prev_high_s = prev_high3_i;
-      else if(state_k_i>=8 && state_k_i<16) prev_high_s = prev_high2_i;
-      else if( state_k_i<8) prev_high_s = prev_high1_i;
+    always@( state_k_i or register_num_i or prev_high1_i or prev_high2_i or prev_high3_i or prev_high4_i ) begin
+	     case(register_num_i)
+		    2'b00: prev_high_s = prev_high4_i;
+          2'b01: prev_high_s = prev_high3_i;
+          2'b10: prev_high_s = prev_high2_i;
+          2'b11: prev_high_s = prev_high1_i;
+		    default: prev_high_s = 0;
+		  endcase
     end
     
-    assign init_prev_s = tail_biting_en_i ? Initial_Lower : 0;    
-    assign prev_low_tmp_s  = is_t0_i ? init_prev_s : $signed(prev_low_i);
-    assign prev_high_tmp_s = is_t0_i ? init_prev_s : $signed(prev_high_s);
+	 //assign init_state0_s = state_k_i==0 ? 0 :Initial_Lower;
+    //assign init_prev_s = tail_biting_en_i ? 0 : init_state0_s;    
+    //assign prev_low_tmp_s  = i s_t0_i ? init_prev_s : $signed(prev_low_i);
+    //assign prev_high_tmp_s = is_t0_i ? init_prev_s : $signed(prev_high_s);
+	 assign prev_low_tmp_s  =  $signed(prev_low_i);
+    assign prev_high_tmp_s =  $signed(prev_high_s);
     assign bm_s        = $signed(bm_i);
     assign pm_low_s    = prev_low_tmp_s + bm_s;
     assign pm_high_s   = prev_high_tmp_s - bm_s;

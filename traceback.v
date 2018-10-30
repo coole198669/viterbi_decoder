@@ -28,12 +28,12 @@ module traceback #(parameter W_TB_LEN=6,W_HALF=32,W_FULL=64)(
 );
 
 
-
+parameter UPDATE_STATE = W_FULL*2-2;
 
 reg [W_TB_LEN-1:0]   tb_addr_r;
 reg                   tb_rd_r;
-
-
+reg                   rdata_valid_r;
+reg                   tb_bits_valid_r;
 reg [W_TB_LEN:0]     tb_len_r;
 reg                    decodeing_end_r; 
 
@@ -52,7 +52,9 @@ assign tb_rd_o   = tb_rd_r;
 assign tb_addr_o = tb_addr_r;
 assign half_tb_bits_o =half_tb_bits_r;
 assign full_tb_bits_o = full_tb_bits_r;  
-assign   tb_bits_valid_o = tb_counter_r==1 ? 1:0;
+assign   tb_bits_valid_o = tb_bits_valid_r;
+
+
 always@(posedge clk_i or negedge rst_an_i) begin
    if(!rst_an_i) begin 
      tb_len_r            <= 0;    
@@ -89,6 +91,23 @@ always@(posedge clk_i or negedge rst_an_i) begin
   else tb_rd_r<= 0;  
 end
 
+
+always@(posedge clk_i or negedge rst_an_i) begin
+  if(!rst_an_i)              rdata_valid_r <= 0;    
+  else if(rst_sync_i)        rdata_valid_r <= 0;  
+  else rdata_valid_r <= tb_rd_r;
+end
+
+always@(posedge clk_i or negedge rst_an_i) begin
+  if(!rst_an_i)              tb_bits_valid_r <= 0;    
+  else if(rst_sync_i)        tb_bits_valid_r <= 0;  
+  else if(tb_counter_r==0 && rdata_valid_r==1'b1)
+      tb_bits_valid_r <= 1'b1;
+  else
+      tb_bits_valid_r <= 1'b0;		
+end
+
+  
 always@(posedge clk_i or negedge rst_an_i) begin
   if(!rst_an_i)              tb_addr_r <= 0;  
   else if(rst_sync_i)        tb_addr_r <= 0;  
@@ -185,11 +204,11 @@ always@(posedge clk_i or negedge rst_an_i) begin
   if(!rst_an_i)              state_index_r <= 0;  
   else if(rst_sync_i)        state_index_r <= 0;  
   else if(segment_start_i)   state_index_r <= start_state_index_i; 
-  else if(tb_counter_r!=0 && tb_counter_r[1]==1'b1)  begin
+  else if(tb_counter_r!=0 && tb_counter_r<UPDATE_STATE && tb_counter_r[0]==1'b1)  begin
     if(get_bit_s)
-       state_index_r <=state_index_r>>1 + left_shif_num_r;  
+       state_index_r <=(state_index_r>>1) + left_shif_num_r;  
     else
-       state_index_r <=state_index_r>>1 + left_shif_num_r;  
+       state_index_r <=(state_index_r>>1);  
   end  
 end
 
@@ -198,8 +217,8 @@ always@(posedge clk_i or negedge rst_an_i) begin
   if(!rst_an_i)              half_tb_bits_r <= 0;  
   else if(rst_sync_i)        half_tb_bits_r <= 0;  
   else if(segment_start_i)   half_tb_bits_r <= 0; 
-  else if(~decodeing_end_r && tb_counter_r<=tb_len_r && tb_counter_r[0]==1'b1)   
-     half_tb_bits_r <= {half_tb_bits_r[W_HALF-1:1], get_bit_s};
+  else if(~decodeing_end_r && tb_counter_r<=tb_len_r && tb_counter_r[0]==1'b0 && rdata_valid_r==1'b1)   
+     half_tb_bits_r <= {half_tb_bits_r[W_HALF-2:0], get_bit_s};
   else half_tb_bits_r <= half_tb_bits_r;
 end
 
@@ -207,8 +226,8 @@ always@(posedge clk_i or negedge rst_an_i) begin
   if(!rst_an_i)              full_tb_bits_r <= 0;  
   else if(rst_sync_i)        full_tb_bits_r <= 0;  
   else if(segment_start_i)   full_tb_bits_r <= 0; 
-  else if(decodeing_end_r && tb_counter_r[0]==1'b1)   
-     full_tb_bits_r <= {full_tb_bits_r[W_FULL-1:1], get_bit_s};
+  else if(decodeing_end_r && tb_counter_r[0]==1'b0 && rdata_valid_r==1'b1)   
+     full_tb_bits_r <= {full_tb_bits_r[W_FULL-2:0], get_bit_s};
   else full_tb_bits_r <= full_tb_bits_r;
 end
 

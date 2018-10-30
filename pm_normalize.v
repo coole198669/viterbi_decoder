@@ -23,7 +23,9 @@ module pm_normalize #(parameter WIDTH_BM = 9)(
     input rst_an_i,
     input rst_sync_i,
     input en_i,
+	 input frame_start_i,
     input [1:0] register_num_i,
+	 input tail_biting_en_i,
     input [WIDTH_BM-1:0] pm_tmp_0_i,
     input [WIDTH_BM-1:0] pm_tmp_1_i,
     input [WIDTH_BM-1:0] pm_tmp_2_i,
@@ -377,6 +379,11 @@ generate
          pm_nom_r[i] <= 0;    
       else if(rst_sync_i) 
          pm_nom_r[i] <= 0; 
+		else if(frame_start_i) begin
+		   if(tail_biting_en_i ) pm_nom_r[i] <= 0;
+         else if(i==0) pm_nom_r[i] <= 0;
+         else pm_nom_r[i] <= Initial_Lower;
+      end			
       else if(en_i & pm_update_en_s[i]) 
          if((pm_i_signed_s[i]-final_max_matric_s)>Initial_Upper)      
             pm_nom_r[i] <= Initial_Upper;

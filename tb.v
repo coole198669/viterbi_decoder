@@ -57,7 +57,7 @@ module tb(    );
      wire [63:0]            tb_wdata_o;
      wire [63:0]            tb_rdata_i;
 
-assign src_rdata_i =24'hF7F1FF;
+//assign src_rdata_i =24'hFFFFFF;
 always #10 clk_i=~clk_i;
 
 initial begin
@@ -66,21 +66,25 @@ initial begin
 	rst_sync_i =0;   
    frame_start_i=0; 
    register_num_i = 0;      
-   valid_polynomials_i =1 ; 
-   tail_biting_en_i =1;         
-   infobit_length_i=1024;
-   decoding_length_i=2048;  
+   valid_polynomials_i =0 ; 
+   tail_biting_en_i =0;         
+   infobit_length_i=192;
+   decoding_length_i=198;  
    src_start_addr_i=0;
    dst_start_addr_i=0;
-   polynomial1_i = 8'o133;
-   polynomial2_i = 8'o171;
-   polynomial3_i = 8'o165;
-   polynomial4_i = 8'o0;
-   polynomial5_i = 8'o0;
-   polynomial6_i = 8'o0; 
+   polynomial1_i = 8'o117;
+   polynomial2_i = 8'o155;
+   polynomial3_i = 8'o0;
+   polynomial4_i = 8'o1;
+   polynomial5_i = 8'o2;
+   polynomial6_i = 8'o3; 
+	
+	
 	
 	#161;
 	rst_an_i=1;
+	#40;
+	$readmemh("input.txt", in_buf.bram);
 	#80;
 	frame_start_i=1; 
 	#20;
@@ -133,7 +137,15 @@ end
     .tb_rdata_i          (    tb_rdata_i )
 
     );
-	 
+sram_24x2048 in_buf(
+    .clk_i  ( clk_i ),
+    .rst_i  ( rst_an_i ),
+    .wr_en_i( 1'b0 ),
+    .rd_en_i( src_rd_o ),
+    .addr_i ( src_addr_o ),
+    .wdata_i( 24'hFCFC00 ),
+	 .rdata_o( src_rdata_i ) 
+);	 
 	 
  sram_64x64	 sram_64x64_inst(
     .clk_i(clk_i),

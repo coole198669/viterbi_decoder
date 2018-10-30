@@ -318,36 +318,40 @@ always@(posedge clk_i or negedge rst_an_i) begin
  
  always@(posedge clk_i or negedge rst_an_i) begin
    if(!rst_an_i)   begin  
-       src_rd_r <= 1'b0; 
-       src_addr_r<= 0;
+       src_rd_r <= 1'b0;        
        src_len_counter_r <= 0;     
    end
    else if(rst_sync_i )     begin  
-       src_rd_r <= 1'b0; 
-       src_addr_r<= 0; 
+       src_rd_r <= 1'b0;      
        src_len_counter_r <= 0;  
    end
-   else if(frame_start_i)  begin      
-       src_addr_r<= src_start_addr_i; 
+   else if(frame_start_i)  begin   
        src_len_counter_r <= 0;  
    end
    else if(full_tb_start_r | half_tb_start_r |flush_all_start_r) begin
        src_len_counter_r <= src_len_counter_r + 1;  
        src_rd_r <= 1'b1; 
-       if(src_len_counter_r==infobit_length_i) src_addr_r<= src_start_addr_i; 
-       else src_addr_r<= src_addr_r + 1;   
-   
    end
    else if (pm_norm_en_s == 1 && fetch_src_cnt_r!=0 ) begin
        src_len_counter_r <= src_len_counter_r + 1;  
-       src_rd_r <= 1'b1; 
-       if(src_len_counter_r==infobit_length_i) src_addr_r<= src_start_addr_i; 
-       else src_addr_r<= src_addr_r + 1;    
+       src_rd_r <= 1'b1;            
    end
    else src_rd_r <= 1'b0; 
  end
  
+ always@(posedge clk_i or negedge rst_an_i) begin
+   if(!rst_an_i)    
+       src_addr_r<= 0;
+   else if(rst_sync_i )   
+       src_addr_r<= 0;        
+   else if(frame_start_i)     
+       src_addr_r<= src_start_addr_i;       
+   else if(src_rd_r) begin
+       if(src_len_counter_r==infobit_length_i) src_addr_r<= src_start_addr_i; 
+       else src_addr_r<= src_addr_r + 1;    
+   end
  
+ end
 
  
 assign tb_wr_s = acs_valid_s[0];
@@ -465,14 +469,14 @@ always@(posedge clk_i or negedge rst_an_i) begin
      dst_wr_r    <= 1'b1;    
      dst_wdata_r <=  decoding_end_s ? full_tb_bits_s[7:0] : half_tb_bits_s[7:0];
      byte_idx_r <= byte_idx_s-1;  
-     if(decoding_end_s) half_tb_bits_tmp_r  <= half_tb_bits_tmp_r>>8;
-     else full_tb_bits_tmp_r <=full_tb_bits_tmp_r >> 8; 
+     if(!decoding_end_s) half_tb_bits_tmp_r  <= half_tb_bits_s>>8;
+     else full_tb_bits_tmp_r <=full_tb_bits_s >> 8; 
 	end
    else if(byte_idx_r>0) begin
      byte_idx_r <= byte_idx_r -1;
      dst_wr_r  <= 1'b1;   
      dst_wdata_r <= decoding_end_s ? full_tb_bits_tmp_r[7:0] : half_tb_bits_tmp_r[7:0];      
-     if(decoding_end_s) half_tb_bits_tmp_r  <= half_tb_bits_tmp_r>>8;
+     if(!decoding_end_s) half_tb_bits_tmp_r  <= half_tb_bits_tmp_r>>8;
      else full_tb_bits_tmp_r <=full_tb_bits_tmp_r >> 8; 
    end
    else begin
@@ -498,7 +502,9 @@ end
     .rst_an_i      (rst_an_i      ),
     .rst_sync_i    (rst_sync_i    ), 
     .en_i          (pm_norm_en_s  ),
+	 .frame_start_i ( frame_start_i ),
     .register_num_i(register_num_i),
+	 .tail_biting_en_i( tail_biting_en_i ),
     .pm_tmp_0_i     ( pm_tmp_s_0 ),
     .pm_tmp_1_i     ( pm_tmp_s_1 ),
     .pm_tmp_2_i     ( pm_tmp_s_2 ),
@@ -1922,7 +1928,7 @@ ACS acs_inst_0  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_0), 
              .bm_valid_i     (bm_valid_s[0]), 
              .prev_low_i     (pm_r_s_0),  
@@ -1942,7 +1948,7 @@ ACS acs_inst_1  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_1), 
              .bm_valid_i     (bm_valid_s[1]), 
              .prev_low_i     (pm_r_s_0),  
@@ -1962,7 +1968,7 @@ ACS acs_inst_2  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_2), 
              .bm_valid_i     (bm_valid_s[2]), 
              .prev_low_i     (pm_r_s_1),  
@@ -1982,7 +1988,7 @@ ACS acs_inst_3  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_3), 
              .bm_valid_i     (bm_valid_s[3]), 
              .prev_low_i     (pm_r_s_1),  
@@ -2002,7 +2008,7 @@ ACS acs_inst_4  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_4), 
              .bm_valid_i     (bm_valid_s[4]), 
              .prev_low_i     (pm_r_s_2),  
@@ -2022,7 +2028,7 @@ ACS acs_inst_5  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_5), 
              .bm_valid_i     (bm_valid_s[5]), 
              .prev_low_i     (pm_r_s_2),  
@@ -2042,7 +2048,7 @@ ACS acs_inst_6  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_6), 
              .bm_valid_i     (bm_valid_s[6]), 
              .prev_low_i     (pm_r_s_3),  
@@ -2062,7 +2068,7 @@ ACS acs_inst_7  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_7), 
              .bm_valid_i     (bm_valid_s[7]), 
              .prev_low_i     (pm_r_s_3),  
@@ -2082,7 +2088,7 @@ ACS acs_inst_8  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_8), 
              .bm_valid_i     (bm_valid_s[8]), 
              .prev_low_i     (pm_r_s_4),  
@@ -2102,7 +2108,7 @@ ACS acs_inst_9  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_9), 
              .bm_valid_i     (bm_valid_s[9]), 
              .prev_low_i     (pm_r_s_4),  
@@ -2122,7 +2128,7 @@ ACS acs_inst_10  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_10), 
              .bm_valid_i     (bm_valid_s[10]), 
              .prev_low_i     (pm_r_s_5),  
@@ -2142,7 +2148,7 @@ ACS acs_inst_11  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_11), 
              .bm_valid_i     (bm_valid_s[11]), 
              .prev_low_i     (pm_r_s_5),  
@@ -2162,7 +2168,7 @@ ACS acs_inst_12  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_12), 
              .bm_valid_i     (bm_valid_s[12]), 
              .prev_low_i     (pm_r_s_6),  
@@ -2182,7 +2188,7 @@ ACS acs_inst_13  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_13), 
              .bm_valid_i     (bm_valid_s[13]), 
              .prev_low_i     (pm_r_s_6),  
@@ -2202,7 +2208,7 @@ ACS acs_inst_14  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_14), 
              .bm_valid_i     (bm_valid_s[14]), 
              .prev_low_i     (pm_r_s_7),  
@@ -2222,7 +2228,7 @@ ACS acs_inst_15  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_15), 
              .bm_valid_i     (bm_valid_s[15]), 
              .prev_low_i     (pm_r_s_7),  
@@ -2242,7 +2248,7 @@ ACS acs_inst_16  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_16), 
              .bm_valid_i     (bm_valid_s[16]), 
              .prev_low_i     (pm_r_s_8),  
@@ -2262,7 +2268,7 @@ ACS acs_inst_17  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_17), 
              .bm_valid_i     (bm_valid_s[17]), 
              .prev_low_i     (pm_r_s_8),  
@@ -2282,7 +2288,7 @@ ACS acs_inst_18  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_18), 
              .bm_valid_i     (bm_valid_s[18]), 
              .prev_low_i     (pm_r_s_9),  
@@ -2302,7 +2308,7 @@ ACS acs_inst_19  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_19), 
              .bm_valid_i     (bm_valid_s[19]), 
              .prev_low_i     (pm_r_s_9),  
@@ -2322,7 +2328,7 @@ ACS acs_inst_20  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_20), 
              .bm_valid_i     (bm_valid_s[20]), 
              .prev_low_i     (pm_r_s_10),  
@@ -2342,7 +2348,7 @@ ACS acs_inst_21  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_21), 
              .bm_valid_i     (bm_valid_s[21]), 
              .prev_low_i     (pm_r_s_10),  
@@ -2362,7 +2368,7 @@ ACS acs_inst_22  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_22), 
              .bm_valid_i     (bm_valid_s[22]), 
              .prev_low_i     (pm_r_s_11),  
@@ -2382,7 +2388,7 @@ ACS acs_inst_23  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_23), 
              .bm_valid_i     (bm_valid_s[23]), 
              .prev_low_i     (pm_r_s_11),  
@@ -2402,7 +2408,7 @@ ACS acs_inst_24  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_24), 
              .bm_valid_i     (bm_valid_s[24]), 
              .prev_low_i     (pm_r_s_12),  
@@ -2422,7 +2428,7 @@ ACS acs_inst_25  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_25), 
              .bm_valid_i     (bm_valid_s[25]), 
              .prev_low_i     (pm_r_s_12),  
@@ -2442,7 +2448,7 @@ ACS acs_inst_26  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_26), 
              .bm_valid_i     (bm_valid_s[26]), 
              .prev_low_i     (pm_r_s_13),  
@@ -2462,7 +2468,7 @@ ACS acs_inst_27  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_27), 
              .bm_valid_i     (bm_valid_s[27]), 
              .prev_low_i     (pm_r_s_13),  
@@ -2482,7 +2488,7 @@ ACS acs_inst_28  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_28), 
              .bm_valid_i     (bm_valid_s[28]), 
              .prev_low_i     (pm_r_s_14),  
@@ -2502,7 +2508,7 @@ ACS acs_inst_29  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_29), 
              .bm_valid_i     (bm_valid_s[29]), 
              .prev_low_i     (pm_r_s_14),  
@@ -2522,7 +2528,7 @@ ACS acs_inst_30  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_30), 
              .bm_valid_i     (bm_valid_s[30]), 
              .prev_low_i     (pm_r_s_15),  
@@ -2542,7 +2548,7 @@ ACS acs_inst_31  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_31), 
              .bm_valid_i     (bm_valid_s[31]), 
              .prev_low_i     (pm_r_s_15),  
@@ -2562,7 +2568,7 @@ ACS acs_inst_32  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_32), 
              .bm_valid_i     (bm_valid_s[32]), 
              .prev_low_i     (pm_r_s_16),  
@@ -2582,7 +2588,7 @@ ACS acs_inst_33  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_33), 
              .bm_valid_i     (bm_valid_s[33]), 
              .prev_low_i     (pm_r_s_16),  
@@ -2602,7 +2608,7 @@ ACS acs_inst_34  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_34), 
              .bm_valid_i     (bm_valid_s[34]), 
              .prev_low_i     (pm_r_s_17),  
@@ -2622,7 +2628,7 @@ ACS acs_inst_35  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_35), 
              .bm_valid_i     (bm_valid_s[35]), 
              .prev_low_i     (pm_r_s_17),  
@@ -2642,7 +2648,7 @@ ACS acs_inst_36  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_36), 
              .bm_valid_i     (bm_valid_s[36]), 
              .prev_low_i     (pm_r_s_18),  
@@ -2662,7 +2668,7 @@ ACS acs_inst_37  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_37), 
              .bm_valid_i     (bm_valid_s[37]), 
              .prev_low_i     (pm_r_s_18),  
@@ -2682,7 +2688,7 @@ ACS acs_inst_38  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_38), 
              .bm_valid_i     (bm_valid_s[38]), 
              .prev_low_i     (pm_r_s_19),  
@@ -2702,7 +2708,7 @@ ACS acs_inst_39  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_39), 
              .bm_valid_i     (bm_valid_s[39]), 
              .prev_low_i     (pm_r_s_19),  
@@ -2722,7 +2728,7 @@ ACS acs_inst_40  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_40), 
              .bm_valid_i     (bm_valid_s[40]), 
              .prev_low_i     (pm_r_s_20),  
@@ -2742,7 +2748,7 @@ ACS acs_inst_41  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_41), 
              .bm_valid_i     (bm_valid_s[41]), 
              .prev_low_i     (pm_r_s_20),  
@@ -2762,7 +2768,7 @@ ACS acs_inst_42  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_42), 
              .bm_valid_i     (bm_valid_s[42]), 
              .prev_low_i     (pm_r_s_21),  
@@ -2782,7 +2788,7 @@ ACS acs_inst_43  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_43), 
              .bm_valid_i     (bm_valid_s[43]), 
              .prev_low_i     (pm_r_s_21),  
@@ -2802,7 +2808,7 @@ ACS acs_inst_44  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_44), 
              .bm_valid_i     (bm_valid_s[44]), 
              .prev_low_i     (pm_r_s_22),  
@@ -2822,7 +2828,7 @@ ACS acs_inst_45  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_45), 
              .bm_valid_i     (bm_valid_s[45]), 
              .prev_low_i     (pm_r_s_22),  
@@ -2842,7 +2848,7 @@ ACS acs_inst_46  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_46), 
              .bm_valid_i     (bm_valid_s[46]), 
              .prev_low_i     (pm_r_s_23),  
@@ -2862,7 +2868,7 @@ ACS acs_inst_47  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_47), 
              .bm_valid_i     (bm_valid_s[47]), 
              .prev_low_i     (pm_r_s_23),  
@@ -2882,7 +2888,7 @@ ACS acs_inst_48  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_48), 
              .bm_valid_i     (bm_valid_s[48]), 
              .prev_low_i     (pm_r_s_24),  
@@ -2902,7 +2908,7 @@ ACS acs_inst_49  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_49), 
              .bm_valid_i     (bm_valid_s[49]), 
              .prev_low_i     (pm_r_s_24),  
@@ -2922,7 +2928,7 @@ ACS acs_inst_50  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_50), 
              .bm_valid_i     (bm_valid_s[50]), 
              .prev_low_i     (pm_r_s_25),  
@@ -2942,7 +2948,7 @@ ACS acs_inst_51  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_51), 
              .bm_valid_i     (bm_valid_s[51]), 
              .prev_low_i     (pm_r_s_25),  
@@ -2962,7 +2968,7 @@ ACS acs_inst_52  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_52), 
              .bm_valid_i     (bm_valid_s[52]), 
              .prev_low_i     (pm_r_s_26),  
@@ -2982,7 +2988,7 @@ ACS acs_inst_53  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_53), 
              .bm_valid_i     (bm_valid_s[53]), 
              .prev_low_i     (pm_r_s_26),  
@@ -3002,7 +3008,7 @@ ACS acs_inst_54  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_54), 
              .bm_valid_i     (bm_valid_s[54]), 
              .prev_low_i     (pm_r_s_27),  
@@ -3022,7 +3028,7 @@ ACS acs_inst_55  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_55), 
              .bm_valid_i     (bm_valid_s[55]), 
              .prev_low_i     (pm_r_s_27),  
@@ -3042,7 +3048,7 @@ ACS acs_inst_56  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_56), 
              .bm_valid_i     (bm_valid_s[56]), 
              .prev_low_i     (pm_r_s_28),  
@@ -3062,7 +3068,7 @@ ACS acs_inst_57  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_57), 
              .bm_valid_i     (bm_valid_s[57]), 
              .prev_low_i     (pm_r_s_28),  
@@ -3082,7 +3088,7 @@ ACS acs_inst_58  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_58), 
              .bm_valid_i     (bm_valid_s[58]), 
              .prev_low_i     (pm_r_s_29),  
@@ -3102,7 +3108,7 @@ ACS acs_inst_59  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_59), 
              .bm_valid_i     (bm_valid_s[59]), 
              .prev_low_i     (pm_r_s_29),  
@@ -3122,7 +3128,7 @@ ACS acs_inst_60  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s ),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_60), 
              .bm_valid_i     (bm_valid_s[60]), 
              .prev_low_i     (pm_r_s_30),  
@@ -3142,7 +3148,7 @@ ACS acs_inst_61  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s ),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_61), 
              .bm_valid_i     (bm_valid_s[61]), 
              .prev_low_i     (pm_r_s_30),  
@@ -3162,7 +3168,7 @@ ACS acs_inst_62  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s ),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_62), 
              .bm_valid_i     (bm_valid_s[62]), 
              .prev_low_i     (pm_r_s_31),  
@@ -3182,7 +3188,7 @@ ACS acs_inst_63  (
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
              .en_i           (acs_en_s ),
-             .is_t0_i        (is_t0_s),
+             .register_num_i (register_num_i),
              .bm_i           (bm_s_63), 
              .bm_valid_i     (bm_valid_s[63]), 
              .prev_low_i     (pm_r_s_31),  
