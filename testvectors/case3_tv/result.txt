@@ -1,0 +1,2 @@
+test case3FER at snr= -2.771213 dB is 0.020000 
+simulation end

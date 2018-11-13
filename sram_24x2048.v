@@ -18,17 +18,17 @@
 // Additional Comments: 
 //
 //////////////////////////////////////////////////////////////////////////////////
-module sram_24x2048(
+module sram_24x4096(
     input                   clk_i,
     input                   rst_i,
     input                   wr_en_i,
     input                   rd_en_i,
-    input [10:0]             addr_i,
+    input [11:0]             addr_i,
     input [23:0]            wdata_i,
 	 output [23:0]           rdata_o
 );
 
-    reg [23:0]          bram[2047:0];    
+    reg [23:0]          bram[4095:0];    
     integer          i;   
     reg [23:0]       data;
 //add implementation code here 
@@ -36,7 +36,7 @@ module sram_24x2048(
     begin
        if (!rst_i)   
          begin
-           for(i=0;i<=2047;i=i+1) //reset, 按字操作
+           for(i=0;i<=4095;i=i+1) //reset, 按字操作
            bram[i] <= 23'b0;
          end
        else if (wr_en_i) begin

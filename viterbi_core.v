@@ -34,8 +34,8 @@ module viterbi_core #(parameter WIDTH_BM = 9,SRC_ADDR_W = 12 , DST_ADDR_W = 12,W
     input [7:0] polynomial4_i,
     input [7:0] polynomial5_i,
     input [7:0] polynomial6_i,
-    input [10:0] infobit_length_i,
-    input [11:0] decoding_length_i, //Valid when Tail-biting==1 and decodingLength>=InfoBitLength
+    input [11:0] infobit_length_i,
+    input [12:0] decoding_length_i, //Valid when Tail-biting==1 and decodingLength>=InfoBitLength
     input [SRC_ADDR_W-1:0]  src_start_addr_i,
     input [DST_ADDR_W-1:0]  dst_start_addr_i,
      //status output
@@ -66,8 +66,9 @@ wire soft_data_valid_s;
 wire bm_valid_s[63:0];
 wire bmu_ready_s[63:0];
 
-wire is_t0_s;
-wire acs_en_s;
+
+ 
+reg [63:0] acs_en_r;
 //wire signed [WIDTH_BM-1:0] pm_tmp_s[63:0];
 wire survivor_path_s[63:0];
 wire acs_valid_s[63:0];
@@ -110,10 +111,10 @@ parameter IDLE=3'd0, CHECK_REMIN=3'd1,RUN_FULL_TB=3'd2, RUN_HALF_TB=3'd3, FLUSH_
 //
 //
 /////////////////////////////////////////////////////////////////////////
-reg  bmu_ready_d1_r, decoding_start_r, is_t0_r;
+reg  bmu_ready_d1_r, decoding_start_r;
 wire decoding_start_s;
-reg   [11:0]  trellis_idx_r;
-wire   [11:0] ext_trellis_idx_s;
+reg   [12:0]  trellis_idx_r;
+wire   [13:0] ext_trellis_idx_s;
 reg   [2:0]  state_r;
 reg   full_tb_start_r,half_tb_start_r,flush_all_start_r;
 reg   first_loop_r;
@@ -122,6 +123,7 @@ reg  [SRC_ADDR_W-1:0]  fetch_src_cnt_r;
 
 reg                    src_rd_r; 
 reg [SRC_ADDR_W-1:0]   src_addr_r; 
+
 reg [SRC_ADDR_W-1:0]   src_len_counter_r;
 
 reg  traceback_start_r;
@@ -134,7 +136,8 @@ reg [W_TB_ADDR-1:0]    tb_wr_addr_r;
 wire [W_TB_ADDR-1:0]   tb_rd_addr_s;  
 wire [W_TB_ADDR-1:0]   tb_start_addr_s;   
 wire                   decoding_end_s;
-
+wire                  segment_done_s;
+reg                    dst_wr_d1_r;
 
 reg                    dst_wr_r;
 reg [DST_ADDR_W-1:0]   dst_addr_r;
@@ -161,21 +164,26 @@ always@(posedge clk_i or negedge rst_an_i) begin
   else decoding_start_r  <= decoding_start_s; 
 end
 
-assign decoding_start_s = bmu_ready_s[0] & ~bmu_ready_d1_r;
-assign is_t0_s = is_t0_r;
 always@(posedge clk_i or negedge rst_an_i) begin
-  if(!rst_an_i)
-    is_t0_r <= 0;   
-  else if(rst_sync_i |frame_start_i )
-    is_t0_r <= 1;   
-  else if( bm_valid_s[10] ) begin  
-    is_t0_r <= 0;    
-  end 
+  if(!rst_an_i) 
+     acs_en_r  <= 0;     
+  else if(rst_sync_i ) acs_en_r  <= 0;  
+  else if(frame_start_i) begin
+    case(register_num_i)     
+      2'b00:  acs_en_r  <= 64'hFFFFFFFF_FFFFFFFF; 
+	   2'b01:  acs_en_r  <= 64'h00000000_FFFFFFFF;
+	   2'b10:  acs_en_r  <= 64'h00000000_0000FFFF;
+	   2'b11:  acs_en_r  <= 64'h00000000_000000FF;
+	   default:acs_en_r  <= 64'hFFFFFFFF_FFFFFFFF; 
+	 endcase
+  end
 end
+assign decoding_start_s = bmu_ready_s[0] & ~bmu_ready_d1_r;
+
 
 assign busy_o = busy_r;
 assign frame_done_o = frame_done_r;
-assign acs_en_s =64'hFFFFFFFF_FFFFFFFF;
+ 
 always@(posedge clk_i or negedge rst_an_i) begin
   if(!rst_an_i) begin
      state_r  <= IDLE;
@@ -202,7 +210,7 @@ always@(posedge clk_i or negedge rst_an_i) begin
 	  last_loop_r       <= 0;
   end   
   else if(frame_start_i) begin
-     trellis_idx_r   <= decoding_length_i;
+     trellis_idx_r   <= tail_biting_en_i ? decoding_length_i : infobit_length_i;
 	  state_r  <= IDLE;
      full_tb_start_r <= 1'b0;
      half_tb_start_r <= 1'b0;
@@ -254,7 +262,7 @@ always@(posedge clk_i or negedge rst_an_i) begin
         end
       end
       RUN_FULL_TB:begin
-          if(tb_bits_valid_s ) begin
+          if(segment_done_s ) begin
              state_r  <= CHECK_REMIN;
              trellis_idx_r <=trellis_idx_r - FULL_TRACEBAKE_LEN;
            end
@@ -262,7 +270,7 @@ always@(posedge clk_i or negedge rst_an_i) begin
            tb_len_r         <= FULL_TRACEBAKE_LEN;
         end
       RUN_HALF_TB:begin
-          if(tb_bits_valid_s ) begin
+          if(segment_done_s ) begin
              state_r  <= CHECK_REMIN;
              trellis_idx_r <=trellis_idx_r - HALF_TRACEBAKE_LEN;
            end
@@ -270,7 +278,7 @@ always@(posedge clk_i or negedge rst_an_i) begin
           tb_len_r         <= FULL_TRACEBAKE_LEN;
         end
       FLUSH_ALL:begin
-          if(tb_bits_valid_s ) begin
+          if(segment_done_s ) begin
              state_r  <= IDLE;
              trellis_idx_r <= 0;
 				 first_loop_r  <=0;
@@ -292,6 +300,13 @@ always@(posedge clk_i or negedge rst_an_i) begin
   end //else begin
 end // begin
 
+assign segment_done_s = ~dst_wr_r & dst_wr_d1_r;
+
+always@(posedge clk_i or negedge rst_an_i) begin
+  if(!rst_an_i) dst_wr_d1_r <= 1'b0;
+  else if(rst_sync_i )    dst_wr_d1_r <= 1'b0;
+  else  dst_wr_d1_r<= dst_wr_r ;
+end  
 
 
 always@(posedge clk_i or negedge rst_an_i) begin
@@ -329,25 +344,27 @@ always@(posedge clk_i or negedge rst_an_i) begin
        src_len_counter_r <= 0;  
    end
    else if(full_tb_start_r | half_tb_start_r |flush_all_start_r) begin
-       src_len_counter_r <= src_len_counter_r + 1;  
+	    if(src_len_counter_r >=infobit_length_i) src_len_counter_r <= 1;
+       else src_len_counter_r <= src_len_counter_r + 1;  
        src_rd_r <= 1'b1; 
    end
    else if (pm_norm_en_s == 1 && fetch_src_cnt_r!=0 ) begin
-       src_len_counter_r <= src_len_counter_r + 1;  
+       if(src_len_counter_r >=infobit_length_i) src_len_counter_r <= 1;
+       else src_len_counter_r <= src_len_counter_r + 1;  
        src_rd_r <= 1'b1;            
    end
    else src_rd_r <= 1'b0; 
  end
  
  always@(posedge clk_i or negedge rst_an_i) begin
-   if(!rst_an_i)    
+   if(!rst_an_i)  
        src_addr_r<= 0;
    else if(rst_sync_i )   
        src_addr_r<= 0;        
    else if(frame_start_i)     
        src_addr_r<= src_start_addr_i;       
    else if(src_rd_r) begin
-       if(src_len_counter_r==infobit_length_i) src_addr_r<= src_start_addr_i; 
+       if(src_len_counter_r>=infobit_length_i) src_addr_r<= src_start_addr_i; 
        else src_addr_r<= src_addr_r + 1;    
    end
  
@@ -418,24 +435,24 @@ assign ext_trellis_idx_s = trellis_idx_r + HALF_TRACEBAKE_LEN;
 always@(*) begin
     if(decoding_end_s)  begin 
 	    if( first_loop_r) begin
-         if(trellis_idx_r >= 56) byte_idx_s =8;
-         else if(trellis_idx_r >= 48) byte_idx_s =7;
-         else if(trellis_idx_r >= 40) byte_idx_s =6;
-         else if(trellis_idx_r >= 32) byte_idx_s =5;
-         else if(trellis_idx_r >= 24) byte_idx_s =4;
-         else if(trellis_idx_r >= 16) byte_idx_s =3;
-         else if(trellis_idx_r >= 8)  byte_idx_s =2;
+         if(trellis_idx_r > 56) byte_idx_s =8;
+         else if(trellis_idx_r > 48) byte_idx_s =7;
+         else if(trellis_idx_r > 40) byte_idx_s =6;
+         else if(trellis_idx_r > 32) byte_idx_s =5;
+         else if(trellis_idx_r > 24) byte_idx_s =4;
+         else if(trellis_idx_r > 16) byte_idx_s =3;
+         else if(trellis_idx_r > 8)  byte_idx_s =2;
          else if(trellis_idx_r > 0)   byte_idx_s =1;
          else   byte_idx_s =0;
 		 end
 		 else begin
-		  if(ext_trellis_idx_s >= 56) byte_idx_s =8;
-         else if(ext_trellis_idx_s >= 48) byte_idx_s =7;
-         else if(ext_trellis_idx_s >= 40) byte_idx_s =6;
-         else if(ext_trellis_idx_s >= 32) byte_idx_s =5;
-         else if(ext_trellis_idx_s >= 24) byte_idx_s =4;
-         else if(ext_trellis_idx_s >= 16) byte_idx_s =3;
-         else if(ext_trellis_idx_s >= 8)  byte_idx_s =2;
+		  if(ext_trellis_idx_s > 56) byte_idx_s =8;
+         else if(ext_trellis_idx_s > 48) byte_idx_s =7;
+         else if(ext_trellis_idx_s > 40) byte_idx_s =6;
+         else if(ext_trellis_idx_s > 32) byte_idx_s =5;
+         else if(ext_trellis_idx_s > 24) byte_idx_s =4;
+         else if(ext_trellis_idx_s > 16) byte_idx_s =3;
+         else if(ext_trellis_idx_s > 8)  byte_idx_s =2;
          else if(ext_trellis_idx_s > 0)   byte_idx_s =1;
          else   byte_idx_s =0;
 		 end
@@ -1927,7 +1944,7 @@ ACS acs_inst_0  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[0]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_0), 
              .bm_valid_i     (bm_valid_s[0]), 
@@ -1947,7 +1964,7 @@ ACS acs_inst_1  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[1]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_1), 
              .bm_valid_i     (bm_valid_s[1]), 
@@ -1967,7 +1984,7 @@ ACS acs_inst_2  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[2]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_2), 
              .bm_valid_i     (bm_valid_s[2]), 
@@ -1987,7 +2004,7 @@ ACS acs_inst_3  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[3]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_3), 
              .bm_valid_i     (bm_valid_s[3]), 
@@ -2007,7 +2024,7 @@ ACS acs_inst_4  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[4]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_4), 
              .bm_valid_i     (bm_valid_s[4]), 
@@ -2027,7 +2044,7 @@ ACS acs_inst_5  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[5]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_5), 
              .bm_valid_i     (bm_valid_s[5]), 
@@ -2047,7 +2064,7 @@ ACS acs_inst_6  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[6]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_6), 
              .bm_valid_i     (bm_valid_s[6]), 
@@ -2067,7 +2084,7 @@ ACS acs_inst_7  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[7]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_7), 
              .bm_valid_i     (bm_valid_s[7]), 
@@ -2087,7 +2104,7 @@ ACS acs_inst_8  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[8]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_8), 
              .bm_valid_i     (bm_valid_s[8]), 
@@ -2107,7 +2124,7 @@ ACS acs_inst_9  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[9]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_9), 
              .bm_valid_i     (bm_valid_s[9]), 
@@ -2127,7 +2144,7 @@ ACS acs_inst_10  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[10]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_10), 
              .bm_valid_i     (bm_valid_s[10]), 
@@ -2147,7 +2164,7 @@ ACS acs_inst_11  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[11]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_11), 
              .bm_valid_i     (bm_valid_s[11]), 
@@ -2167,7 +2184,7 @@ ACS acs_inst_12  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[12]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_12), 
              .bm_valid_i     (bm_valid_s[12]), 
@@ -2187,7 +2204,7 @@ ACS acs_inst_13  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[13]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_13), 
              .bm_valid_i     (bm_valid_s[13]), 
@@ -2207,7 +2224,7 @@ ACS acs_inst_14  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[14]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_14), 
              .bm_valid_i     (bm_valid_s[14]), 
@@ -2227,7 +2244,7 @@ ACS acs_inst_15  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[15]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_15), 
              .bm_valid_i     (bm_valid_s[15]), 
@@ -2247,7 +2264,7 @@ ACS acs_inst_16  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[15]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_16), 
              .bm_valid_i     (bm_valid_s[16]), 
@@ -2267,7 +2284,7 @@ ACS acs_inst_17  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[17]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_17), 
              .bm_valid_i     (bm_valid_s[17]), 
@@ -2287,7 +2304,7 @@ ACS acs_inst_18  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[18]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_18), 
              .bm_valid_i     (bm_valid_s[18]), 
@@ -2307,7 +2324,7 @@ ACS acs_inst_19  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[19]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_19), 
              .bm_valid_i     (bm_valid_s[19]), 
@@ -2327,7 +2344,7 @@ ACS acs_inst_20  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[20]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_20), 
              .bm_valid_i     (bm_valid_s[20]), 
@@ -2347,7 +2364,7 @@ ACS acs_inst_21  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[21]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_21), 
              .bm_valid_i     (bm_valid_s[21]), 
@@ -2367,7 +2384,7 @@ ACS acs_inst_22  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[22]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_22), 
              .bm_valid_i     (bm_valid_s[22]), 
@@ -2387,7 +2404,7 @@ ACS acs_inst_23  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[23]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_23), 
              .bm_valid_i     (bm_valid_s[23]), 
@@ -2407,7 +2424,7 @@ ACS acs_inst_24  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[24]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_24), 
              .bm_valid_i     (bm_valid_s[24]), 
@@ -2427,7 +2444,7 @@ ACS acs_inst_25  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[25]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_25), 
              .bm_valid_i     (bm_valid_s[25]), 
@@ -2447,7 +2464,7 @@ ACS acs_inst_26  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[26]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_26), 
              .bm_valid_i     (bm_valid_s[26]), 
@@ -2467,7 +2484,7 @@ ACS acs_inst_27  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[27]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_27), 
              .bm_valid_i     (bm_valid_s[27]), 
@@ -2487,7 +2504,7 @@ ACS acs_inst_28  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[28]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_28), 
              .bm_valid_i     (bm_valid_s[28]), 
@@ -2507,7 +2524,7 @@ ACS acs_inst_29  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[29]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_29), 
              .bm_valid_i     (bm_valid_s[29]), 
@@ -2527,7 +2544,7 @@ ACS acs_inst_30  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[30]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_30), 
              .bm_valid_i     (bm_valid_s[30]), 
@@ -2547,7 +2564,7 @@ ACS acs_inst_31  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[31]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_31), 
              .bm_valid_i     (bm_valid_s[31]), 
@@ -2567,7 +2584,7 @@ ACS acs_inst_32  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[32]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_32), 
              .bm_valid_i     (bm_valid_s[32]), 
@@ -2587,7 +2604,7 @@ ACS acs_inst_33  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[33]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_33), 
              .bm_valid_i     (bm_valid_s[33]), 
@@ -2607,7 +2624,7 @@ ACS acs_inst_34  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[34]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_34), 
              .bm_valid_i     (bm_valid_s[34]), 
@@ -2627,7 +2644,7 @@ ACS acs_inst_35  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[35]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_35), 
              .bm_valid_i     (bm_valid_s[35]), 
@@ -2647,7 +2664,7 @@ ACS acs_inst_36  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[36]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_36), 
              .bm_valid_i     (bm_valid_s[36]), 
@@ -2667,7 +2684,7 @@ ACS acs_inst_37  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[37]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_37), 
              .bm_valid_i     (bm_valid_s[37]), 
@@ -2687,7 +2704,7 @@ ACS acs_inst_38  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[38]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_38), 
              .bm_valid_i     (bm_valid_s[38]), 
@@ -2707,7 +2724,7 @@ ACS acs_inst_39  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[39]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_39), 
              .bm_valid_i     (bm_valid_s[39]), 
@@ -2727,7 +2744,7 @@ ACS acs_inst_40  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[40]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_40), 
              .bm_valid_i     (bm_valid_s[40]), 
@@ -2747,7 +2764,7 @@ ACS acs_inst_41  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[41]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_41), 
              .bm_valid_i     (bm_valid_s[41]), 
@@ -2767,7 +2784,7 @@ ACS acs_inst_42  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[42]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_42), 
              .bm_valid_i     (bm_valid_s[42]), 
@@ -2787,7 +2804,7 @@ ACS acs_inst_43  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[43]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_43), 
              .bm_valid_i     (bm_valid_s[43]), 
@@ -2807,7 +2824,7 @@ ACS acs_inst_44  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[44]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_44), 
              .bm_valid_i     (bm_valid_s[44]), 
@@ -2827,7 +2844,7 @@ ACS acs_inst_45  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[45]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_45), 
              .bm_valid_i     (bm_valid_s[45]), 
@@ -2847,7 +2864,7 @@ ACS acs_inst_46  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[46]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_46), 
              .bm_valid_i     (bm_valid_s[46]), 
@@ -2867,7 +2884,7 @@ ACS acs_inst_47  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[47]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_47), 
              .bm_valid_i     (bm_valid_s[47]), 
@@ -2887,7 +2904,7 @@ ACS acs_inst_48  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[48]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_48), 
              .bm_valid_i     (bm_valid_s[48]), 
@@ -2907,7 +2924,7 @@ ACS acs_inst_49  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[49]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_49), 
              .bm_valid_i     (bm_valid_s[49]), 
@@ -2927,7 +2944,7 @@ ACS acs_inst_50  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[50]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_50), 
              .bm_valid_i     (bm_valid_s[50]), 
@@ -2947,7 +2964,7 @@ ACS acs_inst_51  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[51]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_51), 
              .bm_valid_i     (bm_valid_s[51]), 
@@ -2967,7 +2984,7 @@ ACS acs_inst_52  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[52]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_52), 
              .bm_valid_i     (bm_valid_s[52]), 
@@ -2987,7 +3004,7 @@ ACS acs_inst_53  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[53]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_53), 
              .bm_valid_i     (bm_valid_s[53]), 
@@ -3007,7 +3024,7 @@ ACS acs_inst_54  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[54]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_54), 
              .bm_valid_i     (bm_valid_s[54]), 
@@ -3027,7 +3044,7 @@ ACS acs_inst_55  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[55]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_55), 
              .bm_valid_i     (bm_valid_s[55]), 
@@ -3047,7 +3064,7 @@ ACS acs_inst_56  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[56]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_56), 
              .bm_valid_i     (bm_valid_s[56]), 
@@ -3067,7 +3084,7 @@ ACS acs_inst_57  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[57]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_57), 
              .bm_valid_i     (bm_valid_s[57]), 
@@ -3087,7 +3104,7 @@ ACS acs_inst_58  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[58]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_58), 
              .bm_valid_i     (bm_valid_s[58]), 
@@ -3107,7 +3124,7 @@ ACS acs_inst_59  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s),
+             .en_i           (acs_en_r[59]),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_59), 
              .bm_valid_i     (bm_valid_s[59]), 
@@ -3127,7 +3144,7 @@ ACS acs_inst_60  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s ),
+             .en_i           (acs_en_r[60] ),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_60), 
              .bm_valid_i     (bm_valid_s[60]), 
@@ -3147,7 +3164,7 @@ ACS acs_inst_61  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s ),
+             .en_i           (acs_en_r[61] ),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_61), 
              .bm_valid_i     (bm_valid_s[61]), 
@@ -3167,7 +3184,7 @@ ACS acs_inst_62  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s ),
+             .en_i           (acs_en_r[62] ),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_62), 
              .bm_valid_i     (bm_valid_s[62]), 
@@ -3187,7 +3204,7 @@ ACS acs_inst_63  (
              .clk_i          (clk_i),
              .rst_an_i       (rst_an_i),
              .rst_sync_i     (rst_sync_i),
-             .en_i           (acs_en_s ),
+             .en_i           (acs_en_r[63] ),
              .register_num_i (register_num_i),
              .bm_i           (bm_s_63), 
              .bm_valid_i     (bm_valid_s[63]), 
