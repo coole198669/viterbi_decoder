@@ -57,7 +57,7 @@ module tb(    );
      wire [63:0]            tb_wdata_o;
      wire [63:0]            tb_rdata_i;
 	  
-     integer fp_w;//浠ュ啓鐨勬柟寮忔墦寮�鏂囦欢
+     integer fp_w;//以写的方式打开文件
 //assign src_rdata_i =24'hFFFFFF;
 always #10 clk_i=~clk_i;
 

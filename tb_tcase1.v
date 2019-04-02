@@ -82,6 +82,8 @@ always #10 clk_i=~clk_i;
 assign src_addr_mux_s = inject_wr ? inject_wr_addr : src_addr_o;
 
 initial begin
+	$fsdbDumpfile("tb_tcase1.fsdb");
+$fsdbDumpvars();
    clk_i=0;
 	rst_an_i=0;
 	rst_sync_i =0;   

@@ -18,7 +18,7 @@
 // Additional Comments: 
 //
 //////////////////////////////////////////////////////////////////////////////////
-module sram_24x4096 (
+module sram_24x4096(
     input                   clk_i,
     input                   rst_i,
     input                   wr_en_i,
@@ -36,7 +36,7 @@ module sram_24x4096 (
     begin
        if (!rst_i)   
          begin
-           for(i=0;i<=2047;i=i+1) //reset, 按字操作
+           for(i=0;i<=4095;i=i+1) //reset, 按字操作
            bram[i] <= 23'b0;
          end
        else if (wr_en_i) begin
